@@ -2,19 +2,20 @@
 
 ## 概要
 
-Go言語で実装するFXバックテストライブラリ。.hstファイルのヒストリカルデータを使用して、取引戦略のバックテストを実行する。
+Go言語で実装するFXバックテストライブラリ。CSVファイルのヒストリカルデータを使用して、取引戦略のバックテストを実行する。
 
 ## 要件
 
 ### 基本要件
-- .hstファイルからヒストリカルデータを読み込み
+- CSVファイルからヒストリカルデータを読み込み
 - スプレッド設定の対応
 - 初期投資額の設定
 - 注文実行機能（成行、指値、逆指値）
 - バックテスト結果の統計情報出力
 
 ### 対応データ形式
-- MetaTrader 4/5の.hstファイル
+- CSV形式のヒストリカルデータ
+- フォーマット：Timestamp, Open, High, Low, Close, Volume
 - タイムフレーム：M1, M5, M15, M30, H1, H4, D1
 
 ## アーキテクチャ
@@ -24,7 +25,7 @@ Go言語で実装するFXバックテストライブラリ。.hstファイルの
 #### 1. DataProvider
 ```go
 type DataProvider interface {
-    LoadHistoricalData(filePath string) ([]Candle, error)
+    LoadCSVData(filePath string) ([]Candle, error)
     GetCandle(timestamp time.Time) (Candle, error)
 }
 ```
@@ -114,7 +115,7 @@ type Config struct {
 ## 実装フロー
 
 ### 1. データ読み込み
-1. .hstファイルを解析
+1. CSVファイルを解析
 2. Candleデータに変換
 3. 時系列順にソート
 
@@ -133,8 +134,8 @@ type Config struct {
 
 ```go
 // データプロバイダーの初期化
-dataProvider := NewHstDataProvider()
-data, err := dataProvider.LoadHistoricalData("EURUSD_M1.hst")
+dataProvider := NewCSVDataProvider()
+data, err := dataProvider.LoadCSVData("EURUSD_M1.csv")
 
 // 設定
 config := Config{
@@ -192,8 +193,8 @@ fx-backtesting/
 │   │   └── broker_test.go       # ブローカーテスト
 │   ├── data/
 │   │   ├── provider.go          # データプロバイダーインターフェース
-│   │   ├── hst_provider.go      # .hstファイルプロバイダー
-│   │   ├── hst_parser.go        # .hstファイルパーサー
+│   │   ├── csv_provider.go      # CSVファイルプロバイダー
+│   │   ├── csv_parser.go        # CSVファイルパーサー
 │   │   └── data_test.go         # データ関連テスト
 │   ├── models/
 │   │   ├── candle.go            # ローソク足データ
@@ -214,7 +215,7 @@ fx-backtesting/
 │       ├── math.go              # 数学ユーティリティ
 │       └── utils_test.go        # ユーティリティテスト
 ├── testdata/
-│   ├── sample.hst               # サンプルデータ
+│   ├── sample.csv               # サンプルデータ
 │   └── test_cases/              # テストケースデータ
 ├── docs/
 │   ├── design.md                # 設計書
@@ -254,14 +255,14 @@ fx-backtesting/
 - **受け入れテスト**: 実際の使用例に基づいたエンドツーエンドテスト
 
 #### テスト対象
-- DataProviderの.hstファイル読み込み
+- DataProviderのCSVファイル読み込み
 - Brokerの注文処理とポジション管理
 - Backtesterの実行ロジック
 - 統計計算の正確性
 - エラーハンドリング
 
 #### テストデータ
-- 実際の.hstファイルを使用したテストデータ
+- 実際のCSVファイルを使用したテストデータ
 - エッジケース用の合成データ
 - パフォーマンステスト用の大容量データ
 
