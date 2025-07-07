@@ -2,281 +2,165 @@
 
 ## 概要
 
-Go言語で実装するFXバックテストライブラリ。CSVファイルのヒストリカルデータを使用して、取引戦略のバックテストを実行する。
+Go言語で実装するFXバックテストライブラリ。ヒストリカルデータを使用し、ユーザーがGoコード内で直接記述した取引ロジックのバックテストを実行する。イテレータパターンの採用により、直感的で柔軟なテスト記述を可能にする。
 
 ## 要件
 
-### 基本要件
 - CSVファイルからヒストリカルデータを読み込み
-- スプレッド設定の対応
-- 初期投資額の設定
-- 注文実行機能（成行、指値、逆指値）
+- スプレッド、初期投資額などの設定に対応
+- ユーザーがループで1本ずつローソク足を進め、取引を実行できる
 - バックテスト結果の統計情報出力
-
-### 対応データ形式
-- CSV形式のヒストリカルデータ
-- フォーマット：Timestamp, Open, High, Low, Close, Volume
-- タイムフレーム：M1, M5, M15, M30, H1, H4, D1
 
 ## アーキテクチャ
 
 ### コアコンポーネント
 
-#### 1. DataProvider
-```go
-type DataProvider interface {
-    LoadCSVData(filePath string) ([]Candle, error)
-    GetCandle(timestamp time.Time) (Candle, error)
-}
-```
+#### 1. Backtester
+バックテストの実行全体を管理するコアコンポーネント。データストリームの管理、ブローカーの操作、状態の更新など、すべての責務を内部にカプセル化する。
 
-#### 2. Backtester
 ```go
+// Backtesterは、データ供給、注文実行、状態管理をすべて内包します。
 type Backtester struct {
-    dataProvider DataProvider
-    broker       Broker
-    strategy     Strategy
-    config       Config
+    config        Config
+    broker        broker.Broker
+    dataProvider  data.DataProvider
+
+    candleCh      <-chan models.Candle
+    errCh         <-chan error
+    currentCandle models.Candle
+    isFinished    bool
 }
 ```
 
-#### 3. Broker
-```go
-type Broker interface {
-    PlaceOrder(order Order) error
-    ClosePosition(positionID string) error
-    GetBalance() float64
-    GetPositions() []Position
-}
-```
+#### 2. DataProvider (内部コンポーネント)
+`Backtester`の内部で使用されるコンポーネント。設定に基づきデータソースからローソク足データをストリームとして供給する。
 
-#### 4. Strategy
-```go
-type Strategy interface {
-    OnTick(candle Candle, broker Broker) error
-    OnOrderFill(order Order, broker Broker) error
-}
-```
+#### 3. Broker (内部コンポーネント)
+`Backtester`の内部で使用されるコンポーネント。注文の実行、ポジション管理、残高計算などを行う。
 
 ### データ構造
 
-#### Candle
-```go
-type Candle struct {
-    Timestamp time.Time
-    Open      float64
-    High      float64
-    Low       float64
-    Close     float64
-    Volume    int64
-}
-```
-
-#### Order
-```go
-type Order struct {
-    ID        string
-    Symbol    string
-    Type      OrderType
-    Side      OrderSide
-    Size      float64
-    Price     float64
-    StopLoss  float64
-    TakeProfit float64
-    Timestamp time.Time
-}
-```
-
-#### Position
-```go
-type Position struct {
-    ID          string
-    Symbol      string
-    Side        OrderSide
-    Size        float64
-    EntryPrice  float64
-    CurrentPrice float64
-    PnL         float64
-    OpenTime    time.Time
-}
-```
-
-#### Config
+#### Config (トップレベル設定)
+バックテストに必要なすべての設定をまとめる構造体。
 ```go
 type Config struct {
+    DataProvider DataProviderConfig
+    Broker       BrokerConfig
+}
+
+// DataProviderConfig はデータプロバイダーに関する設定です。
+type DataProviderConfig struct {
+    FilePath string
+    // Timeframe string などを将来的に追加
+}
+
+// BrokerConfig はブローカーに関する設定です。
+type BrokerConfig {
     InitialBalance float64
     Spread         float64
     Commission     float64
-    Slippage       float64
-    Leverage       float64
 }
 ```
 
+`Candle`, `Order`, `Position`の定義は変更ありません。
+
 ## 実装フロー
 
-### 1. データ読み込み
-1. CSVファイルを解析
-2. Candleデータに変換
-3. 時系列順にソート
-
-### 2. バックテスト実行
-1. 設定値の初期化
-2. 各時点でのストラテジー実行
-3. 注文処理とポジション管理
-4. 損益計算
-
-### 3. 結果出力
-1. 統計情報の計算
-2. パフォーマンス指標の算出
-3. 取引履歴の出力
+1.  **初期化**: ユーザーは `DataProviderConfig` と `BrokerConfig` を含む `Config` オブジェクトを作成する。
+2.  **Backtester生成**: `NewBacktester(config)` を呼び出す。
+    - `NewBacktester` 内部で `DataProvider` と `Broker` を設定に基づき生成する。
+    - `DataProvider.StreamData()` を呼び出し、データチャネルを取得して保持する。
+3.  **バックテストループ**: ユーザーは `for bt.Forward()` ループを記述する。
+    - `bt.Forward()`: 内部でデータチャネルから次のローソク足を取得し、`currentCandle` を更新する。データがなくなれば `false` を返す。
+    - `bt.GetCurrentCandle()`: ループ内で現在のローソク足データを取得する。
+    - `bt.Buy()` / `bt.Sell()`: ユーザーは取引ロジックに基づき、注文関数を呼び出す。
+4.  **結果取得**: ループ終了後、`bt.GetResult()` などで統計情報を取得する。
 
 ## 使用例
 
 ```go
-// データプロバイダーの初期化
-dataProvider := NewCSVDataProvider()
-data, err := dataProvider.LoadCSVData("EURUSD_M1.csv")
+package main
 
-// 設定
-config := Config{
-    InitialBalance: 10000.0,
-    Spread:         0.0001,
-    Commission:     0.0,
-    Slippage:       0.0,
-    Leverage:       100.0,
+import (
+    "fmt"
+    "log"
+    "fx-backtesting/pkg/backtester"
+)
+
+func main() {
+    // データソースに関する設定
+    dpConfig := backtester.DataProviderConfig{
+        FilePath: "./testdata/EURUSD_M1.csv",
+    }
+
+    // ブローカーに関する設定
+    brokerConfig := backtester.BrokerConfig{
+        InitialBalance: 10000.0,
+        Spread:         0.0001, // 1 pip
+    }
+
+    // バックテスト全体の設定
+    config := backtester.Config{
+        DataProvider: dpConfig,
+        Broker:       brokerConfig,
+    }
+
+    // バックテスターの作成
+    bt, err := backtester.NewBacktester(config)
+    if err != nil {
+        log.Fatalf("Failed to create backtester: %v", err)
+    }
+
+    // バックテスト実行ループ
+    for bt.Forward() {
+        candle, err := bt.GetCurrentCandle()
+        if err != nil {
+            log.Printf("Cannot get current candle: %v", err)
+            continue
+        }
+
+        // 単純な取引ロジックの例：
+        // 終値が1.1より大きく、ポジションがなければ買い
+        positions := bt.GetPositions()
+        if candle.Close > 1.1 && len(positions) == 0 {
+            size := 10000.0 // 10,000通貨
+            _, err := bt.Buy(size, 0, 0) // 成行買い
+            if err != nil {
+                log.Printf("Buy order failed: %v", err)
+            }
+        }
+
+        // 終値が1.1より小さく、ポジションがあれば決済
+        if candle.Close < 1.1 && len(positions) > 0 {
+            for _, p := range positions {
+                bt.ClosePosition(p.ID)
+            }
+        }
+    }
+
+    // 結果の表示
+    result, err := bt.GetResult()
+    if err != nil {
+        log.Fatalf("Failed to get result: %v", err)
+    }
+
+    fmt.Printf("Total PnL: %.2f\n", result.TotalPnL)
+    fmt.Printf("Win Rate: %.2f%%\n", result.WinRate)
+    fmt.Printf("Total Trades: %d\n", result.TotalTrades)
 }
-
-// ストラテジーの実装
-strategy := NewMovingAverageStrategy(20, 50)
-
-// バックテスターの作成
-backtester := NewBacktester(dataProvider, config)
-
-// バックテスト実行
-result, err := backtester.Run(strategy, data)
-
-// 結果の表示
-fmt.Printf("Total PnL: %.2f\n", result.TotalPnL)
-fmt.Printf("Win Rate: %.2f%%\n", result.WinRate)
 ```
-
-## パフォーマンス指標
-
-### 基本指標
-- 総損益（Total PnL）
-- 勝率（Win Rate）
-- 最大ドローダウン（Max Drawdown）
-- シャープレシオ（Sharpe Ratio）
-- プロフィットファクター（Profit Factor）
-
-### 詳細指標
-- 平均利益/損失
-- 最大連勝/連敗
-- 取引回数
-- 保有期間統計
 
 ## プロジェクト構造
 
+`pkg/strategy` が不要になる以外、大きな変更はありません。
+
 ```
 fx-backtesting/
-├── cmd/
-│   └── backtester/
-│       └── main.go              # CLIエントリーポイント
 ├── pkg/
-│   ├── backtester/
-│   │   ├── backtester.go        # バックテスター本体
-│   │   └── backtester_test.go   # バックテスターテスト
-│   ├── broker/
-│   │   ├── broker.go            # ブローカーインターフェース
-│   │   ├── mock_broker.go       # モックブローカー
-│   │   ├── simple_broker.go     # シンプルブローカー実装
-│   │   └── broker_test.go       # ブローカーテスト
-│   ├── data/
-│   │   ├── provider.go          # データプロバイダーインターフェース
-│   │   ├── csv_provider.go      # CSVファイルプロバイダー
-│   │   ├── csv_parser.go        # CSVファイルパーサー
-│   │   └── data_test.go         # データ関連テスト
-│   ├── models/
-│   │   ├── candle.go            # ローソク足データ
-│   │   ├── order.go             # 注文データ
-│   │   ├── position.go          # ポジションデータ
-│   │   ├── config.go            # 設定データ
-│   │   └── models_test.go       # モデルテスト
-│   ├── strategy/
-│   │   ├── strategy.go          # ストラテジーインターフェース
-│   │   ├── ma_strategy.go       # 移動平均戦略
-│   │   └── strategy_test.go     # ストラテジーテスト
-│   ├── statistics/
-│   │   ├── calculator.go        # 統計計算
-│   │   ├── report.go            # レポート生成
-│   │   └── statistics_test.go   # 統計テスト
-│   └── utils/
-│       ├── time.go              # 時間ユーティリティ
-│       ├── math.go              # 数学ユーティリティ
-│       └── utils_test.go        # ユーティリティテスト
-├── testdata/
-│   ├── sample.csv               # サンプルデータ
-│   └── test_cases/              # テストケースデータ
-├── docs/
-│   ├── design.md                # 設計書
-│   ├── api.md                   # API仕様書
-│   └── examples/                # 使用例
-├── examples/
-│   ├── simple_backtest/
-│   │   └── main.go              # シンプルなバックテスト例
-│   └── advanced_strategy/
-│       └── main.go              # 高度な戦略例
-├── go.mod                       # Go modules
-├── go.sum                       # Go modules checksum
-├── Makefile                     # ビルドスクリプト
-└── README.md                    # プロジェクト説明
+│   ├── backtester/ # Backtesterと各種Configを定義
+│   ├── broker/     # Brokerのインターフェースと実装
+│   ├── data/       # DataProviderのインターフェースと実装
+│   ├── models/     # Candle, Order等のデータ構造
+│   └── statistics/ # 統計計算
+# ... (その他)
 ```
-
-### ディレクトリ説明
-- **cmd/**: 実行可能なアプリケーションのエントリーポイント
-- **pkg/**: 再利用可能なライブラリコード
-- **testdata/**: テスト用のデータファイル
-- **docs/**: ドキュメント類
-- **examples/**: 使用例とサンプルコード
-
-## 開発方針
-
-### テスト駆動開発（TDD）
-本プロジェクトでは、t-wadaのTDDアプローチに従って開発を行います。
-
-#### TDDサイクル
-1. **Red**: 失敗するテストを書く
-2. **Green**: テストを通すための最小限のコードを書く
-3. **Refactor**: テストを通したままコードを改善する
-
-#### テスト戦略
-- **単体テスト**: 各コンポーネントの動作を検証
-- **統合テスト**: コンポーネント間の連携を検証
-- **受け入れテスト**: 実際の使用例に基づいたエンドツーエンドテスト
-
-#### テスト対象
-- DataProviderのCSVファイル読み込み
-- Brokerの注文処理とポジション管理
-- Backtesterの実行ロジック
-- 統計計算の正確性
-- エラーハンドリング
-
-#### テストデータ
-- 実際のCSVファイルを使用したテストデータ
-- エッジケース用の合成データ
-- パフォーマンステスト用の大容量データ
-
-## 拡張性
-
-### 将来の機能拡張
-- 複数通貨ペア対応
-- リアルタイム取引対応
-- 複数ストラテジー同時実行
-- ポートフォリオ最適化
-- 機械学習統合
-
-### プラグインアーキテクチャ
-- カスタムインジケーター
-- カスタムオーダータイプ
-- カスタムリスク管理
-- カスタムレポート形式
