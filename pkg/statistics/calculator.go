@@ -54,10 +54,11 @@ func NewCalculator() *Calculator {
 
 // CalculateMetrics calculates comprehensive trading metrics from backtest results
 func (c *Calculator) CalculateMetrics(result *backtester.Result) *Metrics {
-	if result == nil || result.TotalTrades == 0 {
+	if result == nil {
 		return &Metrics{}
 	}
-
+	
+	// Initialize basic metrics even if no trades
 	metrics := &Metrics{
 		TotalPnL:      result.TotalPnL,
 		TotalTrades:   result.TotalTrades,
@@ -66,11 +67,19 @@ func (c *Calculator) CalculateMetrics(result *backtester.Result) *Metrics {
 		WinRate:       result.WinRate,
 		MaxDrawdown:   result.MaxDrawdown,
 	}
-
-	// Calculate total return percentage
+	
+	// Calculate total return
 	if result.InitialBalance > 0 {
-		metrics.TotalReturn = (result.TotalPnL / result.InitialBalance) * 100
+		metrics.TotalReturn = ((result.FinalBalance - result.InitialBalance) / result.InitialBalance) * 100
 	}
+	
+	// If no trades, return early with basic metrics
+	if result.TotalTrades == 0 {
+		return metrics
+	}
+
+	// Additional calculations for when we have trades
+	// Note: TotalReturn already calculated above
 
 	// Calculate annualized return
 	if result.Duration > 0 {
