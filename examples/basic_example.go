@@ -23,7 +23,7 @@ func main() {
 	config := models.NewConfig(
 		10000.0, // Initial balance: $10,000
 		0.0001,  // Spread: 1 pip
-		0.0,     // Commission: $0 per trade
+		0.0001,  // Commission: 0.01% per trade
 		0.0,     // Slippage: 0 pips
 		100.0,   // Leverage: 1:100
 	)

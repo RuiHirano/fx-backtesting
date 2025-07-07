@@ -78,26 +78,27 @@ func (s *MovingAverageStrategy) OnTick(candle models.Candle, broker broker.Broke
 	signal := s.GetSignal()
 
 	// Check for crossover signals
+	var err error
 	if signal == SignalBuy && s.previousSignal != SignalBuy {
 		// Fast MA crossed above slow MA - Buy signal
 		if s.hasPosition {
 			// Close any existing positions first
 			s.closeAllPositions(broker)
 		}
-		return s.openPosition(models.OrderSideBuy, broker)
+		err = s.openPosition(models.OrderSideBuy, broker)
 	} else if signal == SignalSell && s.previousSignal != SignalSell {
 		// Fast MA crossed below slow MA - Sell signal
 		if s.hasPosition {
 			// Close any existing positions first
 			s.closeAllPositions(broker)
 		}
-		return s.openPosition(models.OrderSideSell, broker)
+		err = s.openPosition(models.OrderSideSell, broker)
 	}
 
 	// Update previous signal for next comparison
 	s.previousSignal = signal
 
-	return nil
+	return err
 }
 
 // OnOrderFill handles order fill events
