@@ -1,275 +1,265 @@
 package statistics
 
 import (
-	"math"
 	"testing"
 	"time"
 
-	"github.com/RuiHirano/fx-backtesting/pkg/backtester"
+	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
-func TestNewCalculator(t *testing.T) {
-	calc := NewCalculator()
+// Calculator NewCalculator テスト
+func TestCalculator_NewCalculator(t *testing.T) {
+	// テスト用取引履歴作成
+	trades := createTestTrades()
 	
-	if calc == nil {
+	calculator := NewCalculator(trades)
+	
+	if calculator == nil {
 		t.Fatal("Expected calculator to be created")
 	}
-}
-
-func TestCalculator_CalculateMetrics(t *testing.T) {
-	calc := NewCalculator()
 	
-	// Create sample result with trades
-	result := &backtester.Result{
-		StartTime:      time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		EndTime:        time.Date(2024, 1, 1, 17, 0, 0, 0, time.UTC),
-		Duration:       8 * time.Hour,
-		InitialBalance: 10000.0,
-		FinalBalance:   11000.0,
-		TotalPnL:       1000.0,
-		TotalTrades:    5,
-		WinningTrades:  3,
-		LosingTrades:   2,
-		WinRate:        60.0,
-		MaxDrawdown:    5.0,
-		Trades: []backtester.TradeResult{
-			{PnL: 200.0, Duration: time.Hour},
-			{PnL: -100.0, Duration: 30 * time.Minute},
-			{PnL: 300.0, Duration: 2 * time.Hour},
-			{PnL: -50.0, Duration: 45 * time.Minute},
-			{PnL: 650.0, Duration: 3 * time.Hour},
-		},
-	}
-	
-	metrics := calc.CalculateMetrics(result)
-	
-	if metrics == nil {
-		t.Fatal("Expected metrics to be calculated")
-	}
-	
-	// Check basic metrics
-	if metrics.TotalReturn != 10.0 {
-		t.Errorf("Expected total return 10.0%%, got %.2f%%", metrics.TotalReturn)
-	}
-	
-	if metrics.WinRate != 60.0 {
-		t.Errorf("Expected win rate 60.0%%, got %.2f%%", metrics.WinRate)
-	}
-	
-	if metrics.MaxDrawdown != 5.0 {
-		t.Errorf("Expected max drawdown 5.0%%, got %.2f%%", metrics.MaxDrawdown)
+	// 初期状態確認
+	if len(calculator.GetTrades()) != len(trades) {
+		t.Errorf("Expected %d trades, got %d", len(trades), len(calculator.GetTrades()))
 	}
 }
 
-func TestCalculator_CalculateSharpeRatio(t *testing.T) {
-	calc := NewCalculator()
-	
-	trades := []backtester.TradeResult{
-		{PnL: 100.0},
-		{PnL: 150.0},
-		{PnL: -50.0},
-		{PnL: 200.0},
-		{PnL: -30.0},
+// Calculator 基本統計指標テスト
+func TestCalculator_BasicMetrics(t *testing.T) {
+	// テスト用取引履歴作成（利益・損失の混在）
+	trades := []*models.Trade{
+		createTrade("trade-1", 100.0, time.Now()),   // 利益
+		createTrade("trade-2", -50.0, time.Now()),   // 損失
+		createTrade("trade-3", 200.0, time.Now()),   // 利益
+		createTrade("trade-4", -30.0, time.Now()),   // 損失
+		createTrade("trade-5", 80.0, time.Now()),    // 利益
 	}
 	
-	sharpe := calc.CalculateSharpeRatio(trades, 0.02) // 2% risk-free rate
+	calculator := NewCalculator(trades)
 	
-	if sharpe == 0.0 {
-		t.Error("Expected non-zero Sharpe ratio")
+	// 総利益・損失テスト
+	totalPnL := calculator.CalculateTotalPnL()
+	expectedTotal := 100.0 - 50.0 + 200.0 - 30.0 + 80.0 // 300.0
+	if totalPnL != expectedTotal {
+		t.Errorf("Expected total PnL %f, got %f", expectedTotal, totalPnL)
 	}
 	
-	// Test with no trades
-	sharpeEmpty := calc.CalculateSharpeRatio([]backtester.TradeResult{}, 0.02)
-	if sharpeEmpty != 0.0 {
-		t.Errorf("Expected zero Sharpe ratio for no trades, got %.4f", sharpeEmpty)
-	}
-}
-
-func TestCalculator_CalculateProfitFactor(t *testing.T) {
-	calc := NewCalculator()
-	
-	trades := []backtester.TradeResult{
-		{PnL: 100.0},
-		{PnL: 150.0},
-		{PnL: -50.0},
-		{PnL: 200.0},
-		{PnL: -30.0},
+	// 勝率テスト
+	winRate := calculator.CalculateWinRate()
+	expectedWinRate := 3.0 / 5.0 // 60%
+	if winRate != expectedWinRate {
+		t.Errorf("Expected win rate %f, got %f", expectedWinRate, winRate)
 	}
 	
-	pf := calc.CalculateProfitFactor(trades)
-	expectedGrossProfit := 450.0 // 100 + 150 + 200
-	expectedGrossLoss := 80.0    // 50 + 30
-	expectedPF := expectedGrossProfit / expectedGrossLoss
-	
-	if math.Abs(pf-expectedPF) > 0.001 {
-		t.Errorf("Expected profit factor %.3f, got %.3f", expectedPF, pf)
+	// 平均利益テスト
+	avgProfit := calculator.CalculateAverageProfit()
+	expectedAvgProfit := (100.0 + 200.0 + 80.0) / 3.0 // 126.67
+	if avgProfit != expectedAvgProfit {
+		t.Errorf("Expected average profit %f, got %f", expectedAvgProfit, avgProfit)
 	}
 	
-	// Test with no losing trades
-	winningTrades := []backtester.TradeResult{
-		{PnL: 100.0},
-		{PnL: 150.0},
-	}
-	pfWinning := calc.CalculateProfitFactor(winningTrades)
-	if pfWinning <= 0 {
-		t.Error("Expected positive profit factor for winning trades only")
+	// 平均損失テスト
+	avgLoss := calculator.CalculateAverageLoss()
+	expectedAvgLoss := (50.0 + 30.0) / 2.0 // 40.0
+	if avgLoss != expectedAvgLoss {
+		t.Errorf("Expected average loss %f, got %f", expectedAvgLoss, avgLoss)
 	}
 	
-	// Test with no winning trades
-	losingTrades := []backtester.TradeResult{
-		{PnL: -100.0},
-		{PnL: -150.0},
+	// 最大利益テスト
+	maxProfit := calculator.CalculateMaxProfit()
+	expectedMaxProfit := 200.0
+	if maxProfit != expectedMaxProfit {
+		t.Errorf("Expected max profit %f, got %f", expectedMaxProfit, maxProfit)
 	}
-	pfLosing := calc.CalculateProfitFactor(losingTrades)
-	if pfLosing != 0.0 {
-		t.Error("Expected zero profit factor for losing trades only")
+	
+	// 最大損失テスト
+	maxLoss := calculator.CalculateMaxLoss()
+	expectedMaxLoss := 50.0
+	if maxLoss != expectedMaxLoss {
+		t.Errorf("Expected max loss %f, got %f", expectedMaxLoss, maxLoss)
+	}
+	
+	// 取引回数テスト
+	totalTrades := calculator.CalculateTotalTrades()
+	if totalTrades != 5 {
+		t.Errorf("Expected 5 trades, got %d", totalTrades)
 	}
 }
 
-func TestCalculator_CalculateAverageWin(t *testing.T) {
-	calc := NewCalculator()
-	
-	trades := []backtester.TradeResult{
-		{PnL: 100.0},
-		{PnL: 150.0},
-		{PnL: -50.0},
-		{PnL: 200.0},
-		{PnL: -30.0},
+// Calculator リスク指標テスト
+func TestCalculator_RiskMetrics(t *testing.T) {
+	// テスト用取引履歴作成（ドローダウンパターン）
+	trades := []*models.Trade{
+		createTrade("trade-1", 100.0, time.Now()),
+		createTrade("trade-2", -200.0, time.Now()),
+		createTrade("trade-3", -100.0, time.Now()),
+		createTrade("trade-4", 300.0, time.Now()),
+		createTrade("trade-5", 50.0, time.Now()),
 	}
 	
-	avgWin := calc.CalculateAverageWin(trades)
-	expected := (100.0 + 150.0 + 200.0) / 3.0
+	calculator := NewCalculator(trades)
 	
-	if math.Abs(avgWin-expected) > 0.001 {
-		t.Errorf("Expected average win %.3f, got %.3f", expected, avgWin)
+	// 最大ドローダウンテスト
+	maxDrawdown := calculator.CalculateMaxDrawdown()
+	// 累積: 100, -100, -200, 100, 150
+	// ドローダウン: 0, 200, 300, 0, 0
+	expectedMaxDrawdown := 300.0
+	if maxDrawdown != expectedMaxDrawdown {
+		t.Errorf("Expected max drawdown %f, got %f", expectedMaxDrawdown, maxDrawdown)
 	}
 	
-	// Test with no winning trades
-	losingTrades := []backtester.TradeResult{
-		{PnL: -100.0},
-		{PnL: -150.0},
-	}
-	avgWinLosing := calc.CalculateAverageWin(losingTrades)
-	if avgWinLosing != 0.0 {
-		t.Error("Expected zero average win for losing trades only")
-	}
-}
-
-func TestCalculator_CalculateAverageLoss(t *testing.T) {
-	calc := NewCalculator()
-	
-	trades := []backtester.TradeResult{
-		{PnL: 100.0},
-		{PnL: 150.0},
-		{PnL: -50.0},
-		{PnL: 200.0},
-		{PnL: -30.0},
+	// シャープレシオテスト
+	sharpeRatio := calculator.CalculateSharpeRatio()
+	if sharpeRatio <= 0 {
+		t.Error("Expected positive Sharpe ratio")
 	}
 	
-	avgLoss := calc.CalculateAverageLoss(trades)
-	expected := (50.0 + 30.0) / 2.0
-	
-	if math.Abs(avgLoss-expected) > 0.001 {
-		t.Errorf("Expected average loss %.3f, got %.3f", expected, avgLoss)
+	// ソルティノレシオテスト
+	sortinoRatio := calculator.CalculateSortinoRatio()
+	if sortinoRatio <= 0 {
+		t.Error("Expected positive Sortino ratio")
 	}
 	
-	// Test with no losing trades
-	winningTrades := []backtester.TradeResult{
-		{PnL: 100.0},
-		{PnL: 150.0},
-	}
-	avgLossWinning := calc.CalculateAverageLoss(winningTrades)
-	if avgLossWinning != 0.0 {
-		t.Error("Expected zero average loss for winning trades only")
+	// リターン・リスク比テスト
+	returnRiskRatio := calculator.CalculateReturnRiskRatio()
+	if returnRiskRatio <= 0 {
+		t.Error("Expected positive return/risk ratio")
 	}
 }
 
-func TestCalculator_CalculateMaxConsecutiveWins(t *testing.T) {
-	calc := NewCalculator()
+// Calculator 高度統計指標テスト
+func TestCalculator_AdvancedMetrics(t *testing.T) {
+	trades := createTestTrades()
+	calculator := NewCalculator(trades)
 	
-	trades := []backtester.TradeResult{
-		{PnL: 100.0},  // Win
-		{PnL: 150.0},  // Win
-		{PnL: 200.0},  // Win
-		{PnL: -50.0},  // Loss
-		{PnL: 80.0},   // Win
-		{PnL: 90.0},   // Win
-		{PnL: -30.0},  // Loss
+	// カルマーレシオテスト
+	calmarRatio := calculator.CalculateCalmarRatio()
+	if calmarRatio <= 0 {
+		t.Error("Expected positive Calmar ratio")
 	}
 	
-	maxWins := calc.CalculateMaxConsecutiveWins(trades)
-	if maxWins != 3 {
-		t.Errorf("Expected max consecutive wins 3, got %d", maxWins)
+	// プロフィットファクターテスト
+	profitFactor := calculator.CalculateProfitFactor()
+	if profitFactor <= 0 {
+		t.Error("Expected positive profit factor")
 	}
 	
-	// Test with no trades
-	maxWinsEmpty := calc.CalculateMaxConsecutiveWins([]backtester.TradeResult{})
-	if maxWinsEmpty != 0 {
-		t.Errorf("Expected max consecutive wins 0 for empty trades, got %d", maxWinsEmpty)
-	}
-}
-
-func TestCalculator_CalculateMaxConsecutiveLosses(t *testing.T) {
-	calc := NewCalculator()
-	
-	trades := []backtester.TradeResult{
-		{PnL: 100.0},  // Win
-		{PnL: -50.0},  // Loss
-		{PnL: -30.0},  // Loss
-		{PnL: -20.0},  // Loss
-		{PnL: 80.0},   // Win
-		{PnL: -10.0},  // Loss
-		{PnL: -15.0},  // Loss
+	// 期待値テスト
+	expectedValue := calculator.CalculateExpectedValue()
+	if expectedValue == 0 {
+		t.Error("Expected non-zero expected value")
 	}
 	
-	maxLosses := calc.CalculateMaxConsecutiveLosses(trades)
-	if maxLosses != 3 {
-		t.Errorf("Expected max consecutive losses 3, got %d", maxLosses)
+	// 標準偏差テスト
+	stdDev := calculator.CalculateStandardDeviation()
+	if stdDev <= 0 {
+		t.Error("Expected positive standard deviation")
 	}
 }
 
-func TestCalculator_CalculateAverageTradeDuration(t *testing.T) {
-	calc := NewCalculator()
-	
-	trades := []backtester.TradeResult{
-		{Duration: time.Hour},
-		{Duration: 2 * time.Hour},
-		{Duration: 30 * time.Minute},
+// Calculator 取引関連指標テスト
+func TestCalculator_TradingMetrics(t *testing.T) {
+	// 時間間隔のある取引履歴作成
+	baseTime := time.Now()
+	trades := []*models.Trade{
+		createTrade("trade-1", 100.0, baseTime),
+		createTrade("trade-2", -50.0, baseTime.Add(24*time.Hour)),
+		createTrade("trade-3", 75.0, baseTime.Add(48*time.Hour)),
 	}
 	
-	avgDuration := calc.CalculateAverageTradeDuration(trades)
-	expected := (time.Hour + 2*time.Hour + 30*time.Minute) / 3
+	calculator := NewCalculator(trades)
 	
-	if avgDuration != expected {
-		t.Errorf("Expected average duration %v, got %v", expected, avgDuration)
+	// 平均保有期間テスト
+	avgHoldingPeriod := calculator.CalculateAverageHoldingPeriod()
+	if avgHoldingPeriod <= 0 {
+		t.Error("Expected positive average holding period")
 	}
 	
-	// Test with no trades
-	avgDurationEmpty := calc.CalculateAverageTradeDuration([]backtester.TradeResult{})
-	if avgDurationEmpty != 0 {
-		t.Errorf("Expected zero duration for empty trades, got %v", avgDurationEmpty)
+	// 最大連勝テスト
+	maxConsecutiveWins := calculator.CalculateMaxConsecutiveWins()
+	if maxConsecutiveWins < 0 {
+		t.Error("Expected non-negative max consecutive wins")
+	}
+	
+	// 最大連敗テスト
+	maxConsecutiveLosses := calculator.CalculateMaxConsecutiveLosses()
+	if maxConsecutiveLosses < 0 {
+		t.Error("Expected non-negative max consecutive losses")
+	}
+	
+	// 取引頻度テスト（1日あたりの取引数）
+	tradingFrequency := calculator.CalculateTradingFrequency()
+	if tradingFrequency <= 0 {
+		t.Error("Expected positive trading frequency")
+	}
+	
+	// リスクリワード比テスト
+	riskRewardRatio := calculator.CalculateRiskRewardRatio()
+	if riskRewardRatio <= 0 {
+		t.Error("Expected positive risk reward ratio")
 	}
 }
 
-func TestCalculator_CalculateMaxDrawdownPercent(t *testing.T) {
-	calc := NewCalculator()
+// Calculator エラーハンドリングテスト
+func TestCalculator_ErrorHandling(t *testing.T) {
+	// 空の取引履歴テスト
+	emptyTrades := []*models.Trade{}
+	calculator := NewCalculator(emptyTrades)
 	
-	// Test with equity curve that shows drawdown
-	equityCurve := []float64{10000, 10500, 10200, 9800, 9500, 10000, 11000}
-	
-	maxDD := calc.CalculateMaxDrawdownPercent(equityCurve)
-	
-	// Peak was 10500, trough was 9500, so drawdown = (10500-9500)/10500 * 100 = 9.52%
-	expected := (10500.0 - 9500.0) / 10500.0 * 100
-	
-	if math.Abs(maxDD-expected) > 0.01 {
-		t.Errorf("Expected max drawdown %.2f%%, got %.2f%%", expected, maxDD)
+	// 統計計算時のエラーハンドリング確認
+	totalPnL := calculator.CalculateTotalPnL()
+	if totalPnL != 0.0 {
+		t.Errorf("Expected 0 PnL for empty trades, got %f", totalPnL)
 	}
 	
-	// Test with always increasing equity
-	increasingEquity := []float64{10000, 10500, 11000, 11500}
-	maxDDIncreasing := calc.CalculateMaxDrawdownPercent(increasingEquity)
-	if maxDDIncreasing != 0.0 {
-		t.Errorf("Expected zero drawdown for increasing equity, got %.2f%%", maxDDIncreasing)
+	winRate := calculator.CalculateWinRate()
+	if winRate != 0.0 {
+		t.Errorf("Expected 0 win rate for empty trades, got %f", winRate)
+	}
+	
+	// ゼロ除算回避確認
+	avgProfit := calculator.CalculateAverageProfit()
+	if avgProfit != 0.0 {
+		t.Errorf("Expected 0 average profit for empty trades, got %f", avgProfit)
+	}
+	
+	// nilトレード処理テスト
+	nilTrades := []*models.Trade{nil}
+	calculatorWithNil := NewCalculator(nilTrades)
+	
+	totalTradesWithNil := calculatorWithNil.CalculateTotalTrades()
+	if totalTradesWithNil != 0 {
+		t.Errorf("Expected 0 trades when including nil, got %d", totalTradesWithNil)
+	}
+}
+
+// ヘルパー関数: テスト用取引作成
+func createTrade(id string, pnl float64, timestamp time.Time) *models.Trade {
+	return &models.Trade{
+		ID:        id,
+		Symbol:    "EURUSD",
+		Side:      models.Buy,
+		Size:      10000.0,
+		EntryPrice: 1.1000,
+		ExitPrice:  1.1000 + (pnl / 10000.0), // PnLから逆算
+		PnL:       pnl,
+		Status:    models.TradeClosed,
+		OpenTime:  timestamp,
+		CloseTime: timestamp.Add(time.Hour),
+		Duration:  time.Hour,
+	}
+}
+
+// ヘルパー関数: テスト用取引履歴作成
+func createTestTrades() []*models.Trade {
+	baseTime := time.Now()
+	return []*models.Trade{
+		createTrade("trade-1", 150.0, baseTime),
+		createTrade("trade-2", -100.0, baseTime.Add(time.Hour)),
+		createTrade("trade-3", 200.0, baseTime.Add(2*time.Hour)),
+		createTrade("trade-4", -75.0, baseTime.Add(3*time.Hour)),
+		createTrade("trade-5", 125.0, baseTime.Add(4*time.Hour)),
+		createTrade("trade-6", 80.0, baseTime.Add(5*time.Hour)),
+		createTrade("trade-7", -60.0, baseTime.Add(6*time.Hour)),
 	}
 }

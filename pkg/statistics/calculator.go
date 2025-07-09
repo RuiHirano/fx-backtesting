@@ -4,274 +4,331 @@ import (
 	"math"
 	"time"
 
-	"github.com/RuiHirano/fx-backtesting/pkg/backtester"
+	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
-// Metrics represents comprehensive trading statistics
-type Metrics struct {
-	// Basic Performance
-	TotalReturn    float64 // Total return percentage
-	AnnualizedReturn float64 // Annualized return percentage
-	TotalPnL       float64 // Total profit/loss
-	
-	// Risk Metrics
-	MaxDrawdown    float64 // Maximum drawdown percentage
-	SharpeRatio    float64 // Sharpe ratio
-	SortinoRatio   float64 // Sortino ratio
-	CalmarRatio    float64 // Calmar ratio (Annual return / Max drawdown)
-	
-	// Trade Statistics
-	TotalTrades    int     // Total number of trades
-	WinningTrades  int     // Number of winning trades
-	LosingTrades   int     // Number of losing trades
-	WinRate        float64 // Win rate percentage
-	ProfitFactor   float64 // Gross profit / Gross loss
-	
-	// Trade Analysis
-	AverageWin     float64 // Average winning trade
-	AverageLoss    float64 // Average losing trade
-	LargestWin     float64 // Largest winning trade
-	LargestLoss    float64 // Largest losing trade
-	
-	// Consistency Metrics
-	MaxConsecutiveWins   int           // Maximum consecutive wins
-	MaxConsecutiveLosses int           // Maximum consecutive losses
-	AverageTradeDuration time.Duration // Average trade duration
-	
-	// Additional Statistics
-	StandardDeviation float64 // Standard deviation of returns
-	VaR95            float64 // 95% Value at Risk
-	VaR99            float64 // 99% Value at Risk
+// Calculator は統計計算機能を提供します。
+type Calculator struct {
+	trades []*models.Trade
 }
 
-// Calculator provides statistical calculation functionality
-type Calculator struct{}
-
-// NewCalculator creates a new statistics calculator
-func NewCalculator() *Calculator {
-	return &Calculator{}
-}
-
-// CalculateMetrics calculates comprehensive trading metrics from backtest results
-func (c *Calculator) CalculateMetrics(result *backtester.Result) *Metrics {
-	if result == nil {
-		return &Metrics{}
-	}
-	
-	// Initialize basic metrics even if no trades
-	metrics := &Metrics{
-		TotalPnL:      result.TotalPnL,
-		TotalTrades:   result.TotalTrades,
-		WinningTrades: result.WinningTrades,
-		LosingTrades:  result.LosingTrades,
-		WinRate:       result.WinRate,
-		MaxDrawdown:   result.MaxDrawdown,
-	}
-	
-	// Calculate total return
-	if result.InitialBalance > 0 {
-		metrics.TotalReturn = ((result.FinalBalance - result.InitialBalance) / result.InitialBalance) * 100
-	}
-	
-	// If no trades, return early with basic metrics
-	if result.TotalTrades == 0 {
-		return metrics
-	}
-
-	// Additional calculations for when we have trades
-	// Note: TotalReturn already calculated above
-
-	// Calculate annualized return
-	if result.Duration > 0 {
-		yearsElapsed := result.Duration.Hours() / (24 * 365)
-		if yearsElapsed > 0 {
-			metrics.AnnualizedReturn = (math.Pow(result.FinalBalance/result.InitialBalance, 1/yearsElapsed) - 1) * 100
+// NewCalculator は新しいCalculatorを作成します。
+func NewCalculator(trades []*models.Trade) *Calculator {
+	// nilトレードを除外
+	validTrades := make([]*models.Trade, 0, len(trades))
+	for _, trade := range trades {
+		if trade != nil {
+			validTrades = append(validTrades, trade)
 		}
 	}
-
-	// Calculate trade-based metrics
-	metrics.ProfitFactor = c.CalculateProfitFactor(result.Trades)
-	metrics.SharpeRatio = c.CalculateSharpeRatio(result.Trades, 0.02) // Assume 2% risk-free rate
-	metrics.AverageWin = c.CalculateAverageWin(result.Trades)
-	metrics.AverageLoss = c.CalculateAverageLoss(result.Trades)
-	metrics.LargestWin = c.CalculateLargestWin(result.Trades)
-	metrics.LargestLoss = c.CalculateLargestLoss(result.Trades)
-	metrics.MaxConsecutiveWins = c.CalculateMaxConsecutiveWins(result.Trades)
-	metrics.MaxConsecutiveLosses = c.CalculateMaxConsecutiveLosses(result.Trades)
-	metrics.AverageTradeDuration = c.CalculateAverageTradeDuration(result.Trades)
-
-	// Calculate risk metrics
-	metrics.StandardDeviation = c.CalculateStandardDeviation(result.Trades)
-	metrics.SortinoRatio = c.CalculateSortinoRatio(result.Trades, 0.02)
 	
-	if metrics.MaxDrawdown > 0 {
-		metrics.CalmarRatio = metrics.AnnualizedReturn / metrics.MaxDrawdown
+	return &Calculator{
+		trades: validTrades,
 	}
-
-	// Calculate VaR
-	metrics.VaR95 = c.CalculateVaR(result.Trades, 0.05)
-	metrics.VaR99 = c.CalculateVaR(result.Trades, 0.01)
-
-	return metrics
 }
 
-// CalculateSharpeRatio calculates the Sharpe ratio
-func (c *Calculator) CalculateSharpeRatio(trades []backtester.TradeResult, riskFreeRate float64) float64 {
-	if len(trades) == 0 {
+// GetTrades は取引履歴を取得します。
+func (c *Calculator) GetTrades() []*models.Trade {
+	return c.trades
+}
+
+// CalculateTotalPnL は総利益・損失を計算します。
+func (c *Calculator) CalculateTotalPnL() float64 {
+	if len(c.trades) == 0 {
 		return 0.0
 	}
-
-	// Calculate average return
-	totalReturn := 0.0
-	for _, trade := range trades {
-		totalReturn += trade.PnL
+	
+	var total float64
+	for _, trade := range c.trades {
+		total += trade.PnL
 	}
-	avgReturn := totalReturn / float64(len(trades))
+	return total
+}
 
-	// Calculate standard deviation
-	stdDev := c.CalculateStandardDeviation(trades)
+// CalculateWinRate は勝率を計算します。
+func (c *Calculator) CalculateWinRate() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	winCount := 0
+	for _, trade := range c.trades {
+		if trade.IsWinning() {
+			winCount++
+		}
+	}
+	
+	return float64(winCount) / float64(len(c.trades))
+}
+
+// CalculateAverageProfit は平均利益を計算します。
+func (c *Calculator) CalculateAverageProfit() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	var totalProfit float64
+	var profitCount int
+	
+	for _, trade := range c.trades {
+		if trade.IsWinning() {
+			totalProfit += trade.PnL
+			profitCount++
+		}
+	}
+	
+	if profitCount == 0 {
+		return 0.0
+	}
+	
+	return totalProfit / float64(profitCount)
+}
+
+// CalculateAverageLoss は平均損失を計算します。
+func (c *Calculator) CalculateAverageLoss() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	var totalLoss float64
+	var lossCount int
+	
+	for _, trade := range c.trades {
+		if trade.IsLosing() {
+			totalLoss += -trade.PnL // 絶対値として計算
+			lossCount++
+		}
+	}
+	
+	if lossCount == 0 {
+		return 0.0
+	}
+	
+	return totalLoss / float64(lossCount)
+}
+
+// CalculateMaxProfit は最大利益を計算します。
+func (c *Calculator) CalculateMaxProfit() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	maxProfit := 0.0
+	for _, trade := range c.trades {
+		if trade.PnL > maxProfit {
+			maxProfit = trade.PnL
+		}
+	}
+	
+	return maxProfit
+}
+
+// CalculateMaxLoss は最大損失を計算します。
+func (c *Calculator) CalculateMaxLoss() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	maxLoss := 0.0
+	for _, trade := range c.trades {
+		if trade.PnL < 0 && -trade.PnL > maxLoss {
+			maxLoss = -trade.PnL // 絶対値として返す
+		}
+	}
+	
+	return maxLoss
+}
+
+// CalculateTotalTrades は取引回数を計算します。
+func (c *Calculator) CalculateTotalTrades() int {
+	return len(c.trades)
+}
+
+// CalculateMaxDrawdown は最大ドローダウンを計算します。
+func (c *Calculator) CalculateMaxDrawdown() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	var cumulativePnL float64
+	var maxCumulative float64
+	var maxDrawdown float64
+	
+	for _, trade := range c.trades {
+		cumulativePnL += trade.PnL
+		
+		// 新しい高値更新
+		if cumulativePnL > maxCumulative {
+			maxCumulative = cumulativePnL
+		}
+		
+		// ドローダウン計算
+		drawdown := maxCumulative - cumulativePnL
+		if drawdown > maxDrawdown {
+			maxDrawdown = drawdown
+		}
+	}
+	
+	return maxDrawdown
+}
+
+// CalculateSharpeRatio はシャープレシオを計算します。
+func (c *Calculator) CalculateSharpeRatio() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	// リターンの計算
+	returns := make([]float64, len(c.trades))
+	for i, trade := range c.trades {
+		returns[i] = trade.PnL
+	}
+	
+	// 平均リターン
+	meanReturn := c.CalculateTotalPnL() / float64(len(c.trades))
+	
+	// 標準偏差
+	stdDev := c.calculateStandardDeviation(returns, meanReturn)
 	
 	if stdDev == 0 {
 		return 0.0
 	}
-
-	// Convert risk-free rate to per-trade basis (assuming daily trades)
-	dailyRiskFreeRate := riskFreeRate / 365
 	
-	return (avgReturn - dailyRiskFreeRate) / stdDev
+	// リスクフリーレートは0と仮定
+	return meanReturn / stdDev
 }
 
-// CalculateSortinoRatio calculates the Sortino ratio (focuses on downside deviation)
-func (c *Calculator) CalculateSortinoRatio(trades []backtester.TradeResult, riskFreeRate float64) float64 {
-	if len(trades) == 0 {
+// CalculateSortinoRatio はソルティノレシオを計算します。
+func (c *Calculator) CalculateSortinoRatio() float64 {
+	if len(c.trades) == 0 {
 		return 0.0
 	}
-
-	// Calculate average return
-	totalReturn := 0.0
-	for _, trade := range trades {
-		totalReturn += trade.PnL
-	}
-	avgReturn := totalReturn / float64(len(trades))
-
-	// Calculate downside deviation (only negative returns)
-	sumSquaredDownside := 0.0
-	downsideCount := 0
-	for _, trade := range trades {
+	
+	// 負のリターンのみを使用して下方偏差を計算
+	var negativeReturns []float64
+	for _, trade := range c.trades {
 		if trade.PnL < 0 {
-			sumSquaredDownside += math.Pow(trade.PnL, 2)
-			downsideCount++
+			negativeReturns = append(negativeReturns, trade.PnL)
 		}
 	}
-
-	if downsideCount == 0 {
-		return math.Inf(1) // Infinite Sortino ratio if no downside
-	}
-
-	downsideDeviation := math.Sqrt(sumSquaredDownside / float64(downsideCount))
 	
-	if downsideDeviation == 0 {
+	if len(negativeReturns) == 0 {
+		return math.Inf(1) // 負のリターンがない場合は無限大
+	}
+	
+	// 平均リターン
+	meanReturn := c.CalculateTotalPnL() / float64(len(c.trades))
+	
+	// 下方偏差
+	downwardDev := c.calculateStandardDeviation(negativeReturns, 0)
+	
+	if downwardDev == 0 {
 		return 0.0
 	}
-
-	dailyRiskFreeRate := riskFreeRate / 365
-	return (avgReturn - dailyRiskFreeRate) / downsideDeviation
+	
+	return meanReturn / downwardDev
 }
 
-// CalculateProfitFactor calculates the profit factor (gross profit / gross loss)
-func (c *Calculator) CalculateProfitFactor(trades []backtester.TradeResult) float64 {
-	grossProfit := 0.0
-	grossLoss := 0.0
+// CalculateReturnRiskRatio はリターン・リスク比を計算します。
+func (c *Calculator) CalculateReturnRiskRatio() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	totalReturn := c.CalculateTotalPnL()
+	maxDrawdown := c.CalculateMaxDrawdown()
+	
+	if maxDrawdown == 0 {
+		if totalReturn > 0 {
+			return math.Inf(1)
+		}
+		return 0.0
+	}
+	
+	return totalReturn / maxDrawdown
+}
 
-	for _, trade := range trades {
-		if trade.PnL > 0 {
+// CalculateCalmarRatio はカルマーレシオを計算します。
+func (c *Calculator) CalculateCalmarRatio() float64 {
+	// Return/Risk Ratioと同じ計算
+	return c.CalculateReturnRiskRatio()
+}
+
+// CalculateProfitFactor はプロフィットファクターを計算します。
+func (c *Calculator) CalculateProfitFactor() float64 {
+	if len(c.trades) == 0 {
+		return 0.0
+	}
+	
+	var grossProfit, grossLoss float64
+	
+	for _, trade := range c.trades {
+		if trade.IsWinning() {
 			grossProfit += trade.PnL
-		} else if trade.PnL < 0 {
-			grossLoss += math.Abs(trade.PnL)
+		} else if trade.IsLosing() {
+			grossLoss += -trade.PnL // 絶対値
 		}
 	}
-
+	
 	if grossLoss == 0 {
 		if grossProfit > 0 {
-			return math.Inf(1) // Infinite profit factor
+			return math.Inf(1)
 		}
 		return 0.0
 	}
-
+	
 	return grossProfit / grossLoss
 }
 
-// CalculateAverageWin calculates the average winning trade
-func (c *Calculator) CalculateAverageWin(trades []backtester.TradeResult) float64 {
-	totalWin := 0.0
-	winCount := 0
-
-	for _, trade := range trades {
-		if trade.PnL > 0 {
-			totalWin += trade.PnL
-			winCount++
-		}
-	}
-
-	if winCount == 0 {
+// CalculateExpectedValue は期待値を計算します。
+func (c *Calculator) CalculateExpectedValue() float64 {
+	if len(c.trades) == 0 {
 		return 0.0
 	}
-
-	return totalWin / float64(winCount)
+	
+	return c.CalculateTotalPnL() / float64(len(c.trades))
 }
 
-// CalculateAverageLoss calculates the average losing trade
-func (c *Calculator) CalculateAverageLoss(trades []backtester.TradeResult) float64 {
-	totalLoss := 0.0
-	lossCount := 0
-
-	for _, trade := range trades {
-		if trade.PnL < 0 {
-			totalLoss += math.Abs(trade.PnL)
-			lossCount++
-		}
-	}
-
-	if lossCount == 0 {
+// CalculateStandardDeviation は標準偏差を計算します。
+func (c *Calculator) CalculateStandardDeviation() float64 {
+	if len(c.trades) == 0 {
 		return 0.0
 	}
-
-	return totalLoss / float64(lossCount)
-}
-
-// CalculateLargestWin finds the largest winning trade
-func (c *Calculator) CalculateLargestWin(trades []backtester.TradeResult) float64 {
-	largestWin := 0.0
-
-	for _, trade := range trades {
-		if trade.PnL > largestWin {
-			largestWin = trade.PnL
-		}
+	
+	returns := make([]float64, len(c.trades))
+	for i, trade := range c.trades {
+		returns[i] = trade.PnL
 	}
-
-	return largestWin
+	
+	mean := c.CalculateExpectedValue()
+	return c.calculateStandardDeviation(returns, mean)
 }
 
-// CalculateLargestLoss finds the largest losing trade
-func (c *Calculator) CalculateLargestLoss(trades []backtester.TradeResult) float64 {
-	largestLoss := 0.0
-
-	for _, trade := range trades {
-		if trade.PnL < 0 && math.Abs(trade.PnL) > largestLoss {
-			largestLoss = math.Abs(trade.PnL)
-		}
+// CalculateAverageHoldingPeriod は平均保有期間を計算します。
+func (c *Calculator) CalculateAverageHoldingPeriod() time.Duration {
+	if len(c.trades) == 0 {
+		return 0
 	}
-
-	return largestLoss
+	
+	var totalDuration time.Duration
+	for _, trade := range c.trades {
+		totalDuration += trade.Duration
+	}
+	
+	return totalDuration / time.Duration(len(c.trades))
 }
 
-// CalculateMaxConsecutiveWins calculates the maximum consecutive winning trades
-func (c *Calculator) CalculateMaxConsecutiveWins(trades []backtester.TradeResult) int {
+// CalculateMaxConsecutiveWins は最大連勝数を計算します。
+func (c *Calculator) CalculateMaxConsecutiveWins() int {
+	if len(c.trades) == 0 {
+		return 0
+	}
+	
 	maxWins := 0
 	currentWins := 0
-
-	for _, trade := range trades {
-		if trade.PnL > 0 {
+	
+	for _, trade := range c.trades {
+		if trade.IsWinning() {
 			currentWins++
 			if currentWins > maxWins {
 				maxWins = currentWins
@@ -280,17 +337,21 @@ func (c *Calculator) CalculateMaxConsecutiveWins(trades []backtester.TradeResult
 			currentWins = 0
 		}
 	}
-
+	
 	return maxWins
 }
 
-// CalculateMaxConsecutiveLosses calculates the maximum consecutive losing trades
-func (c *Calculator) CalculateMaxConsecutiveLosses(trades []backtester.TradeResult) int {
+// CalculateMaxConsecutiveLosses は最大連敗数を計算します。
+func (c *Calculator) CalculateMaxConsecutiveLosses() int {
+	if len(c.trades) == 0 {
+		return 0
+	}
+	
 	maxLosses := 0
 	currentLosses := 0
-
-	for _, trade := range trades {
-		if trade.PnL < 0 {
+	
+	for _, trade := range c.trades {
+		if trade.IsLosing() {
 			currentLosses++
 			if currentLosses > maxLosses {
 				maxLosses = currentLosses
@@ -299,97 +360,60 @@ func (c *Calculator) CalculateMaxConsecutiveLosses(trades []backtester.TradeResu
 			currentLosses = 0
 		}
 	}
-
+	
 	return maxLosses
 }
 
-// CalculateAverageTradeDuration calculates the average trade duration
-func (c *Calculator) CalculateAverageTradeDuration(trades []backtester.TradeResult) time.Duration {
-	if len(trades) == 0 {
-		return 0
-	}
-
-	totalDuration := time.Duration(0)
-	for _, trade := range trades {
-		totalDuration += trade.Duration
-	}
-
-	return totalDuration / time.Duration(len(trades))
-}
-
-// CalculateStandardDeviation calculates the standard deviation of trade returns
-func (c *Calculator) CalculateStandardDeviation(trades []backtester.TradeResult) float64 {
-	if len(trades) <= 1 {
+// CalculateTradingFrequency は取引頻度を計算します（1日あたりの取引数）。
+func (c *Calculator) CalculateTradingFrequency() float64 {
+	if len(c.trades) < 2 {
 		return 0.0
 	}
-
-	// Calculate mean
-	total := 0.0
-	for _, trade := range trades {
-		total += trade.PnL
+	
+	// 最初と最後の取引時間から期間を計算
+	firstTrade := c.trades[0]
+	lastTrade := c.trades[len(c.trades)-1]
+	
+	duration := lastTrade.OpenTime.Sub(firstTrade.OpenTime)
+	if duration <= 0 {
+		return 0.0
 	}
-	mean := total / float64(len(trades))
-
-	// Calculate variance
-	sumSquaredDiff := 0.0
-	for _, trade := range trades {
-		diff := trade.PnL - mean
-		sumSquaredDiff += diff * diff
+	
+	days := duration.Hours() / 24.0
+	if days == 0 {
+		return float64(len(c.trades)) // 同日内の場合
 	}
-	variance := sumSquaredDiff / float64(len(trades)-1)
+	
+	return float64(len(c.trades)) / days
+}
 
+// CalculateRiskRewardRatio はリスクリワード比を計算します。
+func (c *Calculator) CalculateRiskRewardRatio() float64 {
+	avgProfit := c.CalculateAverageProfit()
+	avgLoss := c.CalculateAverageLoss()
+	
+	if avgLoss == 0 {
+		if avgProfit > 0 {
+			return math.Inf(1)
+		}
+		return 0.0
+	}
+	
+	return avgProfit / avgLoss
+}
+
+// calculateStandardDeviation は標準偏差を計算するヘルパー関数です。
+func (c *Calculator) calculateStandardDeviation(values []float64, mean float64) float64 {
+	if len(values) <= 1 {
+		return 0.0
+	}
+	
+	var sum float64
+	for _, value := range values {
+		diff := value - mean
+		sum += diff * diff
+	}
+	
+	variance := sum / float64(len(values)-1)
 	return math.Sqrt(variance)
-}
-
-// CalculateVaR calculates Value at Risk at the given confidence level
-func (c *Calculator) CalculateVaR(trades []backtester.TradeResult, alpha float64) float64 {
-	if len(trades) == 0 {
-		return 0.0
-	}
-
-	// Sort trades by PnL (ascending)
-	sortedPnL := make([]float64, len(trades))
-	for i, trade := range trades {
-		sortedPnL[i] = trade.PnL
-	}
-
-	// Simple bubble sort for small datasets
-	for i := 0; i < len(sortedPnL); i++ {
-		for j := 0; j < len(sortedPnL)-1-i; j++ {
-			if sortedPnL[j] > sortedPnL[j+1] {
-				sortedPnL[j], sortedPnL[j+1] = sortedPnL[j+1], sortedPnL[j]
-			}
-		}
-	}
-
-	// Find the alpha percentile
-	index := int(float64(len(sortedPnL)) * alpha)
-	if index >= len(sortedPnL) {
-		index = len(sortedPnL) - 1
-	}
-
-	return math.Abs(sortedPnL[index])
-}
-
-// CalculateMaxDrawdownPercent calculates maximum drawdown from equity curve
-func (c *Calculator) CalculateMaxDrawdownPercent(equityCurve []float64) float64 {
-	if len(equityCurve) == 0 {
-		return 0.0
-	}
-
-	maxDrawdown := 0.0
-	peak := equityCurve[0]
-
-	for _, equity := range equityCurve {
-		if equity > peak {
-			peak = equity
-		}
-
-		drawdown := (peak - equity) / peak * 100
-		if drawdown > maxDrawdown {
-			maxDrawdown = drawdown
-		}
-	}
-
-	return maxDrawdown
 }

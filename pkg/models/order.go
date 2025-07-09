@@ -1,86 +1,115 @@
 package models
 
-import "time"
+import (
+	"errors"
+	"strings"
+	"time"
+)
 
-// OrderType represents the type of order
+// OrderType は注文タイプを表します。
 type OrderType int
 
 const (
-	OrderTypeMarket OrderType = iota
-	OrderTypeLimit
-	OrderTypeStop
+	Market OrderType = iota // 成行注文
+	Limit                   // 指値注文
+	Stop                    // 逆指値注文
 )
 
-// OrderSide represents the side of the order (buy or sell)
+// String はOrderTypeの文字列表現を返します。
+func (ot OrderType) String() string {
+	switch ot {
+	case Market:
+		return "Market"
+	case Limit:
+		return "Limit"
+	case Stop:
+		return "Stop"
+	default:
+		return "Unknown"
+	}
+}
+
+// OrderSide は注文方向を表します。
 type OrderSide int
 
 const (
-	OrderSideBuy OrderSide = iota
-	OrderSideSell
+	Buy OrderSide = iota // 買い注文
+	Sell                 // 売り注文
 )
 
-// Order represents a trading order
+// String はOrderSideの文字列表現を返します。
+func (os OrderSide) String() string {
+	switch os {
+	case Buy:
+		return "Buy"
+	case Sell:
+		return "Sell"
+	default:
+		return "Unknown"
+	}
+}
+
+// Order は取引注文を表します。
 type Order struct {
-	ID         string
-	Symbol     string
-	Type       OrderType
-	Side       OrderSide
-	Size       float64
-	Price      float64
-	StopLoss   float64
-	TakeProfit float64
-	Timestamp  time.Time
+	ID         string    `json:"id"`
+	Symbol     string    `json:"symbol"`
+	Type       OrderType `json:"type"`
+	Side       OrderSide `json:"side"`
+	Size       float64   `json:"size"`
+	Price      float64   `json:"price"`
+	StopLoss   float64   `json:"stop_loss"`
+	TakeProfit float64   `json:"take_profit"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
-// NewOrder creates a new Order instance
-func NewOrder(id, symbol string, orderType OrderType, side OrderSide, size, price, stopLoss, takeProfit float64, timestamp time.Time) Order {
-	return Order{
-		ID:         id,
-		Symbol:     symbol,
-		Type:       orderType,
-		Side:       side,
-		Size:       size,
-		Price:      price,
-		StopLoss:   stopLoss,
-		TakeProfit: takeProfit,
-		Timestamp:  timestamp,
+// NewMarketOrder は成行注文を作成します。
+func NewMarketOrder(id, symbol string, side OrderSide, size float64) *Order {
+	return &Order{
+		ID:        id,
+		Symbol:    symbol,
+		Type:      Market,
+		Side:      side,
+		Size:      size,
+		Timestamp: time.Now(),
 	}
 }
 
-// IsValid checks if the order is valid
-func (o Order) IsValid() bool {
-	if o.ID == "" || o.Symbol == "" {
-		return false
+// NewLimitOrder は指値注文を作成します。
+func NewLimitOrder(id, symbol string, side OrderSide, size, price float64) *Order {
+	return &Order{
+		ID:        id,
+		Symbol:    symbol,
+		Type:      Limit,
+		Side:      side,
+		Size:      size,
+		Price:     price,
+		Timestamp: time.Now(),
 	}
-	
+}
+
+// Validate は注文データの妥当性を検証します。
+func (o *Order) Validate() error {
 	if o.Size <= 0 {
-		return false
+		return errors.New("order size must be positive")
 	}
 	
-	// For limit orders, price must be positive
-	if o.Type == OrderTypeLimit && o.Price <= 0 {
-		return false
+	if o.Type == Limit && o.Price <= 0 {
+		return errors.New("limit order must have positive price")
 	}
 	
-	return true
+	if strings.TrimSpace(o.Symbol) == "" {
+		return errors.New("symbol is required")
+	}
+	
+	return nil
 }
 
-// IsMarketOrder returns true if the order is a market order
-func (o Order) IsMarketOrder() bool {
-	return o.Type == OrderTypeMarket
+// IsMarket は成行注文かどうかを判定します。
+func (o *Order) IsMarket() bool {
+	return o.Type == Market
 }
 
-// IsLimitOrder returns true if the order is a limit order
-func (o Order) IsLimitOrder() bool {
-	return o.Type == OrderTypeLimit
-}
-
-// IsBuyOrder returns true if the order is a buy order
-func (o Order) IsBuyOrder() bool {
-	return o.Side == OrderSideBuy
-}
-
-// IsSellOrder returns true if the order is a sell order
-func (o Order) IsSellOrder() bool {
-	return o.Side == OrderSideSell
+// IsLimit は指値注文かどうかを判定します。
+func (o *Order) IsLimit() bool {
+	return o.Type == Limit
 }

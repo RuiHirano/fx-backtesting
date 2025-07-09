@@ -2,66 +2,92 @@ package models
 
 import "time"
 
-// Position represents an open trading position
+// Position は保有ポジションを表します。
 type Position struct {
-	ID           string
-	Symbol       string
-	Side         OrderSide
-	Size         float64
-	EntryPrice   float64
-	CurrentPrice float64
-	PnL          float64
-	OpenTime     time.Time
+	ID           string    `json:"id"`
+	Symbol       string    `json:"symbol"`
+	Side         OrderSide `json:"side"`
+	Size         float64   `json:"size"`
+	EntryPrice   float64   `json:"entry_price"`
+	CurrentPrice float64   `json:"current_price"`
+	PnL          float64   `json:"pnl"`
+	OpenTime     time.Time `json:"open_time"`
+	StopLoss     float64   `json:"stop_loss,omitempty"`
+	TakeProfit   float64   `json:"take_profit,omitempty"`
 }
 
-// NewPosition creates a new Position instance
-func NewPosition(id, symbol string, side OrderSide, size, entryPrice, currentPrice float64, openTime time.Time) Position {
-	position := Position{
+// NewPosition は新しいポジションを作成します。
+func NewPosition(id, symbol string, side OrderSide, size, entryPrice float64) *Position {
+	return &Position{
 		ID:           id,
 		Symbol:       symbol,
 		Side:         side,
 		Size:         size,
 		EntryPrice:   entryPrice,
-		CurrentPrice: currentPrice,
-		OpenTime:     openTime,
+		CurrentPrice: entryPrice,
+		PnL:          0.0,
+		OpenTime:     time.Now(),
 	}
-	position.PnL = position.CalculatePnL()
-	return position
 }
 
-// UpdatePrice updates the current price and recalculates PnL
+// UpdatePrice は現在価格を更新し、PnLを再計算します。
 func (p *Position) UpdatePrice(currentPrice float64) {
 	p.CurrentPrice = currentPrice
-	p.PnL = p.CalculatePnL()
+	p.calculatePnL()
 }
 
-// CalculatePnL calculates the profit/loss of the position
-func (p Position) CalculatePnL() float64 {
-	if p.Side == OrderSideBuy {
-		// Long position: profit when price goes up
-		return (p.CurrentPrice - p.EntryPrice) * p.Size
+// calculatePnL は損益を計算します。
+func (p *Position) calculatePnL() {
+	if p.Side == Buy {
+		p.PnL = (p.CurrentPrice - p.EntryPrice) * p.Size
 	} else {
-		// Short position: profit when price goes down
-		return (p.EntryPrice - p.CurrentPrice) * p.Size
+		p.PnL = (p.EntryPrice - p.CurrentPrice) * p.Size
 	}
 }
 
-// IsProfitable returns true if the position is profitable
-func (p Position) IsProfitable() bool {
-	return p.CalculatePnL() > 0
+// IsLong は買いポジションかどうかを判定します。
+func (p *Position) IsLong() bool {
+	return p.Side == Buy
 }
 
-// IsLoss returns true if the position is at a loss
-func (p Position) IsLoss() bool {
-	return p.CalculatePnL() < 0
+// IsShort は売りポジションかどうかを判定します。
+func (p *Position) IsShort() bool {
+	return p.Side == Sell
 }
 
-// IsLong returns true if the position is long (buy)
-func (p Position) IsLong() bool {
-	return p.Side == OrderSideBuy
+// ShouldStopLoss はストップロス条件に達しているかを判定します。
+func (p *Position) ShouldStopLoss() bool {
+	if p.StopLoss <= 0 {
+		return false
+	}
+	
+	if p.IsLong() {
+		return p.CurrentPrice <= p.StopLoss
+	}
+	return p.CurrentPrice >= p.StopLoss
 }
 
-// IsShort returns true if the position is short (sell)
-func (p Position) IsShort() bool {
-	return p.Side == OrderSideSell
+// ShouldTakeProfit はテイクプロフィット条件に達しているかを判定します。
+func (p *Position) ShouldTakeProfit() bool {
+	if p.TakeProfit <= 0 {
+		return false
+	}
+	
+	if p.IsLong() {
+		return p.CurrentPrice >= p.TakeProfit
+	}
+	return p.CurrentPrice <= p.TakeProfit
+}
+
+// GetMarketValue は現在の市場価値を返します。
+func (p *Position) GetMarketValue() float64 {
+	return p.CurrentPrice * p.Size
+}
+
+// GetPnLPercentage は損益率を返します。
+func (p *Position) GetPnLPercentage() float64 {
+	if p.EntryPrice == 0 {
+		return 0
+	}
+	return (p.PnL / (p.EntryPrice * p.Size)) * 100
 }

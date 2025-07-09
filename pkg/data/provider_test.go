@@ -1,170 +1,149 @@
 package data
 
 import (
-	"os"
+	"context"
 	"testing"
-	"time"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
-func TestCSVDataProvider_LoadCSVData(t *testing.T) {
-	// Create a temporary CSV file for testing
-	csvContent := `2024-01-01 09:00:00,1.0500,1.0520,1.0490,1.0510,1000
-2024-01-01 09:01:00,1.0510,1.0530,1.0500,1.0520,1200
-2024-01-01 09:02:00,1.0520,1.0540,1.0510,1.0530,800`
-
-	tmpFile, err := os.CreateTemp("", "test_data_*.csv")
+// DataProvider StreamData テスト
+func TestDataProvider_StreamData(t *testing.T) {
+	config := models.DataProviderConfig{
+		FilePath: "./testdata/sample.csv",
+		Format:   "csv",
+	}
+	
+	provider := NewCSVProvider(config)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	candleChan, err := provider.StreamData(ctx)
 	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+		t.Fatalf("Expected no error from StreamData, got %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(csvContent); err != nil {
-		t.Fatalf("Failed to write test data: %v", err)
+	
+	// 最初のローソク足を取得
+	candleData, ok := <-candleChan
+	if !ok {
+		t.Fatal("Expected to receive candle from channel")
 	}
-	tmpFile.Close()
-
-	provider := NewCSVDataProvider()
-	candles, err := provider.LoadCSVData(tmpFile.Name())
-	if err != nil {
-		t.Fatalf("LoadCSVData failed: %v", err)
+	
+	if candleData.Symbol != "EURUSD" {
+		t.Errorf("Expected symbol EURUSD, got %s", candleData.Symbol)
 	}
-
-	if len(candles) != 3 {
-		t.Errorf("Expected 3 candles, got %d", len(candles))
+	
+	// チャネルクローズまで読み取り
+	candleCount := 1
+	for range candleChan {
+		candleCount++
 	}
-
-	// Check first candle
-	expected := models.Candle{
-		Timestamp: time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		Open:      1.0500,
-		High:      1.0520,
-		Low:       1.0490,
-		Close:     1.0510,
-		Volume:    1000,
-	}
-
-	if !candlesEqual(candles[0], expected) {
-		t.Errorf("First candle mismatch: got %+v, want %+v", candles[0], expected)
+	
+	if candleCount == 0 {
+		t.Error("Expected to receive at least one candle")
 	}
 }
 
-func TestCSVDataProvider_LoadCSVData_InvalidFile(t *testing.T) {
-	provider := NewCSVDataProvider()
-	_, err := provider.LoadCSVData("nonexistent.csv")
+// CSVProvider 初期化テスト
+func TestCSVProvider_Initialize(t *testing.T) {
+	config := models.DataProviderConfig{
+		FilePath: "./testdata/sample.csv", 
+		Format:   "csv",
+	}
+	
+	provider := NewCSVProvider(config)
+	
+	if provider == nil {
+		t.Fatal("Expected provider to be created")
+	}
+	
+	// 設定の確認
+	if provider.Config.FilePath != config.FilePath {
+		t.Errorf("Expected FilePath %s, got %s", config.FilePath, provider.Config.FilePath)
+	}
+	
+	if provider.Config.Format != config.Format {
+		t.Errorf("Expected Format %s, got %s", config.Format, provider.Config.Format)
+	}
+}
+
+// CSVProvider エラーハンドリングテスト
+func TestCSVProvider_ErrorHandling(t *testing.T) {
+	// 存在しないファイル
+	config := models.DataProviderConfig{
+		FilePath: "./testdata/nonexistent.csv",
+		Format:   "csv",
+	}
+	
+	provider := NewCSVProvider(config)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	_, err := provider.StreamData(ctx)
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
 }
 
-func TestCSVDataProvider_LoadCSVData_InvalidFormat(t *testing.T) {
-	// Create a temporary CSV file with invalid format
-	csvContent := `invalid,data,format`
-
-	tmpFile, err := os.CreateTemp("", "test_invalid_*.csv")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+// CSVParser パースエラーテスト
+func TestCSVParser_ParseError(t *testing.T) {
+	config := models.DataProviderConfig{
+		FilePath: "./testdata/invalid.csv",
+		Format:   "csv",
 	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(csvContent); err != nil {
-		t.Fatalf("Failed to write test data: %v", err)
-	}
-	tmpFile.Close()
-
-	provider := NewCSVDataProvider()
-	_, err = provider.LoadCSVData(tmpFile.Name())
-	if err == nil {
-		t.Error("Expected error for invalid CSV format")
-	}
-}
-
-func TestCSVDataProvider_GetCandle(t *testing.T) {
-	// Create test data
-	csvContent := `2024-01-01 09:00:00,1.0500,1.0520,1.0490,1.0510,1000
-2024-01-01 09:01:00,1.0510,1.0530,1.0500,1.0520,1200`
-
-	tmpFile, err := os.CreateTemp("", "test_get_candle_*.csv")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(csvContent); err != nil {
-		t.Fatalf("Failed to write test data: %v", err)
-	}
-	tmpFile.Close()
-
-	provider := NewCSVDataProvider()
-	_, err = provider.LoadCSVData(tmpFile.Name())
-	if err != nil {
-		t.Fatalf("LoadCSVData failed: %v", err)
-	}
-
-	// Test existing timestamp
-	timestamp := time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC)
-	candle, err := provider.GetCandle(timestamp)
-	if err != nil {
-		t.Fatalf("GetCandle failed: %v", err)
-	}
-
-	if candle.Timestamp != timestamp {
-		t.Errorf("Expected timestamp %v, got %v", timestamp, candle.Timestamp)
-	}
-
-	// Test non-existent timestamp
-	nonExistentTime := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
-	_, err = provider.GetCandle(nonExistentTime)
-	if err == nil {
-		t.Error("Expected error for non-existent timestamp")
-	}
-}
-
-func TestParseCSVLine(t *testing.T) {
-	line := "2024-01-01 09:00:00,1.0500,1.0520,1.0490,1.0510,1000"
 	
-	candle, err := parseCSVLine(line)
+	provider := NewCSVProvider(config)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	candleChan, err := provider.StreamData(ctx)
 	if err != nil {
-		t.Fatalf("parseCSVLine failed: %v", err)
+		// ファイルが存在しない場合はStreamDataでエラー
+		return
 	}
-
-	expected := models.Candle{
-		Timestamp: time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		Open:      1.0500,
-		High:      1.0520,
-		Low:       1.0490,
-		Close:     1.0510,
-		Volume:    1000,
-	}
-
-	if !candlesEqual(candle, expected) {
-		t.Errorf("Parsed candle mismatch: got %+v, want %+v", candle, expected)
+	
+	// チャネルからの読み取りでエラーが発生することを確認
+	for candleData := range candleChan {
+		// 無効なデータでもCandleが作成される場合はバリデーションでチェック
+		if err := candleData.Candle.Validate(); err == nil {
+			t.Error("Expected validation error for invalid candle data")
+		}
+		break // 最初のエントリのみテスト
 	}
 }
 
-func TestParseCSVLine_InvalidFormat(t *testing.T) {
-	tests := []string{
-		"invalid",
-		"2024-01-01 09:00:00,invalid,1.0520,1.0490,1.0510,1000",
-		"2024-01-01 09:00:00,1.0500,1.0520,1.0490,1.0510,invalid",
-		"2024-01-01 09:00:00,1.0500,1.0520,1.0490", // missing fields
+// 大容量データテスト
+func TestCSVProvider_LargeData(t *testing.T) {
+	config := models.DataProviderConfig{
+		FilePath: "./testdata/large.csv",
+		Format:   "csv",
 	}
-
-	for _, test := range tests {
-		_, err := parseCSVLine(test)
-		if err == nil {
-			t.Errorf("Expected error for invalid line: %s", test)
+	
+	provider := NewCSVProvider(config)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	candleChan, err := provider.StreamData(ctx)
+	if err != nil {
+		// ファイルが存在しない場合はスキップ
+		t.Skip("Large test file not available")
+	}
+	
+	candleCount := 0
+	for range candleChan {
+		candleCount++
+		// メモリ使用量のテストのため、適当な数で止める
+		if candleCount >= 1000 {
+			cancel()
+			break
 		}
 	}
-}
-
-// Helper function to compare candles
-func candlesEqual(a, b models.Candle) bool {
-	return a.Timestamp.Equal(b.Timestamp) &&
-		a.Open == b.Open &&
-		a.High == b.High &&
-		a.Low == b.Low &&
-		a.Close == b.Close &&
-		a.Volume == b.Volume
+	
+	if candleCount == 0 {
+		t.Error("Expected to process some candles")
+	}
 }

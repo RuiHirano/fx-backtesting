@@ -1,223 +1,371 @@
 package backtester
 
 import (
+	"context"
 	"testing"
-	"time"
 
-	"github.com/RuiHirano/fx-backtesting/pkg/broker"
-	"github.com/RuiHirano/fx-backtesting/pkg/data"
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
-	"github.com/RuiHirano/fx-backtesting/pkg/strategy"
 )
 
-func TestNewBacktester(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
-	strategyInstance := strategy.NewMockStrategy()
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
+// Backtester NewBacktester テスト
+func TestBacktester_NewBacktester(t *testing.T) {
+	// Market・Broker設定
+	dataConfig := models.DataProviderConfig{
+		FilePath: "./testdata/sample.csv",
+		Format:   "csv",
+	}
+	
+	brokerConfig := models.BrokerConfig{
+		InitialBalance: 10000.0,
+		Spread:         0.0001,
+	}
+	
+	// Backtester作成
+	backtester := NewBacktester(dataConfig, brokerConfig)
+	
 	if backtester == nil {
 		t.Fatal("Expected backtester to be created")
 	}
-
-	if backtester.GetConfig().InitialBalance != config.InitialBalance {
-		t.Errorf("Expected initial balance %v, got %v", config.InitialBalance, backtester.GetConfig().InitialBalance)
-	}
-}
-
-func TestBacktester_Run_EmptyData(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
-	strategyInstance := strategy.NewMockStrategy()
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
-	// Run with empty data
-	result, err := backtester.Run([]models.Candle{})
-	if err == nil {
-		t.Error("Expected error for empty data")
-	}
-	if result != nil {
-		t.Error("Expected nil result for empty data")
-	}
-}
-
-func TestBacktester_Run_SimpleStrategy(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
-	mockStrategy := strategy.NewMockStrategy()
-	var strategyInstance strategy.Strategy = mockStrategy
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
-	// Create test data
-	candles := []models.Candle{
-		models.NewCandle(time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC), 1.0500, 1.0520, 1.0490, 1.0510, 1000),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 1, 0, 0, time.UTC), 1.0510, 1.0530, 1.0500, 1.0520, 1200),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 2, 0, 0, time.UTC), 1.0520, 1.0540, 1.0510, 1.0530, 800),
-	}
-
-	result, err := backtester.Run(candles)
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
-	}
-
-	if result == nil {
-		t.Fatal("Expected result to be returned")
-	}
-
-	// Check that strategy received all ticks
-	if mockStrategy.GetTickCount() != len(candles) {
-		t.Errorf("Expected %d ticks, got %d", len(candles), mockStrategy.GetTickCount())
-	}
-
-	// Check basic result fields
-	if result.StartTime.IsZero() {
-		t.Error("Expected start time to be set")
-	}
-	if result.EndTime.IsZero() {
-		t.Error("Expected end time to be set")
-	}
-	if result.InitialBalance != config.InitialBalance {
-		t.Errorf("Expected initial balance %v, got %v", config.InitialBalance, result.InitialBalance)
-	}
-}
-
-func TestBacktester_Run_WithTradingStrategy(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
 	
-	// Use a moving average strategy that will generate trades
-	strategyInstance := strategy.NewMovingAverageStrategy("EURUSD", 2, 3, 1000.0)
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
-	// Create test data with trend that will trigger trades
-	candles := []models.Candle{
-		models.NewCandle(time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC), 1.0500, 1.0520, 1.0490, 1.0510, 1000),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 1, 0, 0, time.UTC), 1.0510, 1.0530, 1.0500, 1.0520, 1200),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 2, 0, 0, time.UTC), 1.0520, 1.0540, 1.0510, 1.0530, 800),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 3, 0, 0, time.UTC), 1.0530, 1.0550, 1.0520, 1.0540, 900),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 4, 0, 0, time.UTC), 1.0540, 1.0560, 1.0530, 1.0550, 1100),
-	}
-
-	result, err := backtester.Run(candles)
+	// 初期化
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	err := backtester.Initialize(ctx)
 	if err != nil {
-		t.Fatalf("Run failed: %v", err)
+		t.Fatalf("Expected no error from Initialize, got %v", err)
 	}
-
-	// Debug: check final positions and balance
-	positions := brokerInstance.GetPositions()
-	t.Logf("Final positions: %d", len(positions))
-	t.Logf("Final balance: %v", result.FinalBalance)
-	t.Logf("Total trades: %d", result.TotalTrades)
-
-	// Check that some trading activity occurred
-	// For MA strategy, we expect positions to be opened even if not all are closed
-	if len(positions) == 0 && result.TotalTrades == 0 {
-		t.Error("Expected at least some trading activity (positions or completed trades)")
+	
+	// 初期状態確認
+	if backtester.IsFinished() {
+		t.Error("Expected backtester to not be finished initially")
 	}
-
-	// Check final balance
-	if result.FinalBalance <= 0 {
-		t.Error("Expected positive final balance")
+	
+	// 初期残高確認
+	balance := backtester.GetBalance()
+	if balance != brokerConfig.InitialBalance {
+		t.Errorf("Expected initial balance %f, got %f", brokerConfig.InitialBalance, balance)
 	}
-
-	// Check duration
-	expectedDuration := candles[len(candles)-1].Timestamp.Sub(candles[0].Timestamp)
-	if result.Duration != expectedDuration {
-		t.Errorf("Expected duration %v, got %v", expectedDuration, result.Duration)
+	
+	// 初期ポジション確認
+	positions := backtester.GetPositions()
+	if len(positions) != 0 {
+		t.Errorf("Expected 0 initial positions, got %d", len(positions))
 	}
 }
 
-func TestBacktester_GetProgress(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
-	strategyInstance := strategy.NewMockStrategy()
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
-	// Initially no progress
-	progress := backtester.GetProgress()
-	if progress.ProcessedCandles != 0 {
-		t.Errorf("Expected 0 processed candles, got %d", progress.ProcessedCandles)
+// Backtester Forward（時間進行）テスト
+func TestBacktester_Forward(t *testing.T) {
+	backtester := createTestBacktester(t)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	err := backtester.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error from Initialize, got %v", err)
 	}
-	if progress.TotalCandles != 0 {
-		t.Errorf("Expected 0 total candles, got %d", progress.TotalCandles)
+	
+	// 初期時刻取得
+	initialTime := backtester.GetCurrentTime()
+	if initialTime.IsZero() {
+		t.Error("Expected non-zero initial time")
 	}
-	if progress.Percentage != 0.0 {
-		t.Errorf("Expected 0%% progress, got %v", progress.Percentage)
+	
+	// 初期価格取得
+	initialPrice := backtester.GetCurrentPrice("EURUSD")
+	if initialPrice <= 0.0 {
+		t.Error("Expected positive initial price")
 	}
-}
-
-func TestBacktester_Reset(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
-	mockStrategy := strategy.NewMockStrategy()
-	var strategyInstance strategy.Strategy = mockStrategy
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
-	// Run a simple backtest
-	candles := []models.Candle{
-		models.NewCandle(time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC), 1.0500, 1.0520, 1.0490, 1.0510, 1000),
+	
+	// 時間進行
+	hasNext := backtester.Forward()
+	if !hasNext {
+		t.Error("Expected to have next candle")
 	}
-	backtester.Run(candles)
-
-	// Reset
-	backtester.Reset()
-
-	// Check that state was reset
-	progress := backtester.GetProgress()
-	if progress.ProcessedCandles != 0 {
-		t.Errorf("Expected 0 processed candles after reset, got %d", progress.ProcessedCandles)
+	
+	// 時間更新確認
+	newTime := backtester.GetCurrentTime()
+	if !newTime.After(initialTime) {
+		t.Error("Expected time to advance after Forward")
 	}
-
-	// Check that strategy was reset
-	if mockStrategy.GetTickCount() != 0 {
-		t.Errorf("Expected 0 tick count after reset, got %d", mockStrategy.GetTickCount())
+	
+	// 価格更新確認
+	newPrice := backtester.GetCurrentPrice("EURUSD")
+	if newPrice <= 0.0 {
+		t.Error("Expected positive price after Forward")
 	}
-}
-
-func TestBacktester_RunWithCallback(t *testing.T) {
-	config := models.DefaultConfig()
-	dataProvider := data.NewCSVDataProvider()
-	brokerInstance := broker.NewSimpleBroker(config)
-	strategyInstance := strategy.NewMockStrategy()
-
-	backtester := NewBacktester(dataProvider, brokerInstance, strategyInstance, config)
-
-	// Create test data
-	candles := []models.Candle{
-		models.NewCandle(time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC), 1.0500, 1.0520, 1.0490, 1.0510, 1000),
-		models.NewCandle(time.Date(2024, 1, 1, 9, 1, 0, 0, time.UTC), 1.0510, 1.0530, 1.0500, 1.0520, 1200),
-	}
-
-	callbackCalls := 0
-	progressCallback := func(progress Progress) {
-		callbackCalls++
-		if progress.Percentage < 0 || progress.Percentage > 100 {
-			t.Errorf("Invalid progress percentage: %v", progress.Percentage)
+	
+	// 全データ消費まで進行
+	stepCount := 1
+	for backtester.Forward() {
+		stepCount++
+		if stepCount > 100 { // 無限ループ防止
+			break
 		}
 	}
+	
+	// 終了状態確認
+	if !backtester.IsFinished() {
+		t.Error("Expected backtester to be finished after consuming all data")
+	}
+}
 
-	result, err := backtester.RunWithCallback(candles, progressCallback)
+// Backtester Buy・Sell API テスト
+func TestBacktester_BuySell(t *testing.T) {
+	backtester := createTestBacktester(t)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	err := backtester.Initialize(ctx)
 	if err != nil {
-		t.Fatalf("RunWithCallback failed: %v", err)
+		t.Fatalf("Expected no error from Initialize, got %v", err)
 	}
+	
+	// 初期残高確認
+	initialBalance := backtester.GetBalance()
+	
+	// 買い注文実行
+	err = backtester.Buy("EURUSD", 10000.0)
+	if err != nil {
+		t.Fatalf("Expected no error from Buy, got %v", err)
+	}
+	
+	// ポジション確認
+	positions := backtester.GetPositions()
+	if len(positions) != 1 {
+		t.Errorf("Expected 1 position after buy, got %d", len(positions))
+	}
+	
+	if len(positions) > 0 {
+		position := positions[0]
+		if position.Side != models.Buy {
+			t.Errorf("Expected Buy position, got %v", position.Side)
+		}
+		if position.Size != 10000.0 {
+			t.Errorf("Expected position size 10000.0, got %f", position.Size)
+		}
+	}
+	
+	// 残高変動確認
+	newBalance := backtester.GetBalance()
+	if newBalance >= initialBalance {
+		t.Error("Expected balance to decrease after buy order")
+	}
+	
+	// 売り注文実行
+	err = backtester.Sell("EURUSD", 5000.0)
+	if err != nil {
+		t.Fatalf("Expected no error from Sell, got %v", err)
+	}
+	
+	// ポジション確認（2つになる）
+	positions = backtester.GetPositions()
+	if len(positions) != 2 {
+		t.Errorf("Expected 2 positions after sell, got %d", len(positions))
+	}
+}
 
-	if result == nil {
-		t.Fatal("Expected result to be returned")
+// Backtester ポジション管理テスト
+func TestBacktester_PositionManagement(t *testing.T) {
+	backtester := createTestBacktester(t)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	err := backtester.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error from Initialize, got %v", err)
 	}
+	
+	// 複数ポジション作成
+	err = backtester.Buy("EURUSD", 10000.0)
+	if err != nil {
+		t.Fatalf("Expected no error from first Buy, got %v", err)
+	}
+	
+	err = backtester.Sell("EURUSD", 8000.0)
+	if err != nil {
+		t.Fatalf("Expected no error from Sell, got %v", err)
+	}
+	
+	err = backtester.Buy("EURUSD", 12000.0)
+	if err != nil {
+		t.Fatalf("Expected no error from second Buy, got %v", err)
+	}
+	
+	// ポジション一覧確認
+	positions := backtester.GetPositions()
+	if len(positions) != 3 {
+		t.Errorf("Expected 3 positions, got %d", len(positions))
+	}
+	
+	// 特定ポジションクローズ
+	if len(positions) > 0 {
+		positionID := positions[0].ID
+		err = backtester.ClosePosition(positionID)
+		if err != nil {
+			t.Fatalf("Expected no error from ClosePosition, got %v", err)
+		}
+		
+		// ポジション数確認
+		updatedPositions := backtester.GetPositions()
+		if len(updatedPositions) != 2 {
+			t.Errorf("Expected 2 positions after close, got %d", len(updatedPositions))
+		}
+	}
+	
+	// 全ポジションクローズ
+	err = backtester.CloseAllPositions()
+	if err != nil {
+		t.Fatalf("Expected no error from CloseAllPositions, got %v", err)
+	}
+	
+	// ポジション数確認
+	finalPositions := backtester.GetPositions()
+	if len(finalPositions) != 0 {
+		t.Errorf("Expected 0 positions after close all, got %d", len(finalPositions))
+	}
+}
 
-	if callbackCalls == 0 {
-		t.Error("Expected progress callback to be called")
+// Backtester 統合テスト
+func TestBacktester_Integration(t *testing.T) {
+	backtester := createTestBacktester(t)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	err := backtester.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error from Initialize, got %v", err)
 	}
+	
+	// 複数の時間ステップで取引実行
+	tradeCount := 0
+	maxSteps := 3
+	
+	for step := 0; step < maxSteps && !backtester.IsFinished(); step++ {
+		// 現在価格取得
+		price := backtester.GetCurrentPrice("EURUSD")
+		if price <= 0.0 {
+			t.Errorf("Expected positive price at step %d", step)
+		}
+		
+		// ステップごとに異なる取引パターン
+		switch step {
+		case 0:
+			// 買い注文
+			err = backtester.Buy("EURUSD", 10000.0)
+			if err != nil {
+				t.Fatalf("Expected no error from Buy at step %d, got %v", step, err)
+			}
+			tradeCount++
+			
+		case 1:
+			// 売り注文
+			err = backtester.Sell("EURUSD", 5000.0)
+			if err != nil {
+				t.Fatalf("Expected no error from Sell at step %d, got %v", step, err)
+			}
+			tradeCount++
+			
+		case 2:
+			// ポジション一部決済
+			positions := backtester.GetPositions()
+			if len(positions) > 0 {
+				err = backtester.ClosePosition(positions[0].ID)
+				if err != nil {
+					t.Fatalf("Expected no error from ClosePosition at step %d, got %v", step, err)
+				}
+			}
+		}
+		
+		// 時間進行
+		if step < maxSteps-1 {
+			hasNext := backtester.Forward()
+			if !hasNext {
+				break // データ終了
+			}
+		}
+	}
+	
+	// 最終状態確認
+	finalPositions := backtester.GetPositions()
+	finalBalance := backtester.GetBalance()
+	
+	// ログ出力（デバッグ用）
+	t.Logf("Final positions: %d", len(finalPositions))
+	t.Logf("Final balance: %f", finalBalance)
+	t.Logf("Trade count: %d", tradeCount)
+	
+	// 基本的な整合性確認
+	if finalBalance < 0 {
+		t.Error("Expected non-negative final balance")
+	}
+}
+
+// Backtester エラーハンドリングテスト
+func TestBacktester_ErrorHandling(t *testing.T) {
+	backtester := createTestBacktester(t)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	err := backtester.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error from Initialize, got %v", err)
+	}
+	
+	// 無効なサイズでの注文
+	err = backtester.Buy("EURUSD", 0.0)
+	if err == nil {
+		t.Error("Expected error for zero size order")
+	}
+	
+	err = backtester.Buy("EURUSD", -1000.0)
+	if err == nil {
+		t.Error("Expected error for negative size order")
+	}
+	
+	// 存在しないシンボル
+	err = backtester.Buy("INVALID", 1000.0)
+	if err == nil {
+		t.Error("Expected error for invalid symbol")
+	}
+	
+	// 残高不足での大きな注文
+	err = backtester.Buy("EURUSD", 10000000.0) // 非常に大きな注文
+	if err == nil {
+		t.Error("Expected error for insufficient balance")
+	}
+	
+	// 存在しないポジションのクローズ
+	err = backtester.ClosePosition("nonexistent-id")
+	if err == nil {
+		t.Error("Expected error for nonexistent position")
+	}
+	
+	// 初期化前の操作エラー（新しいbacktesterで）
+	uninitializedBacktester := createTestBacktester(t)
+	
+	err = uninitializedBacktester.Buy("EURUSD", 1000.0)
+	if err == nil {
+		t.Error("Expected error for uninitialized backtester")
+	}
+}
+
+// ヘルパー関数: テスト用Backtester作成
+func createTestBacktester(_ *testing.T) *Backtester {
+	dataConfig := models.DataProviderConfig{
+		FilePath: "./testdata/sample.csv",
+		Format:   "csv",
+	}
+	
+	brokerConfig := models.BrokerConfig{
+		InitialBalance: 10000.0,
+		Spread:         0.0001,
+	}
+	
+	return NewBacktester(dataConfig, brokerConfig)
 }

@@ -1,150 +1,113 @@
 package models
 
 import (
-	"math"
 	"testing"
 	"time"
 )
 
-func TestNewCandle(t *testing.T) {
-	timestamp := time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC)
-	
-	candle := NewCandle(timestamp, 1.0500, 1.0520, 1.0490, 1.0510, 1000)
+// Candle構造体のテスト
+func TestCandle_NewCandle(t *testing.T) {
+	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	candle := NewCandle(timestamp, 1.1000, 1.1010, 1.0990, 1.1005, 1000.0)
 	
 	if candle.Timestamp != timestamp {
 		t.Errorf("Expected timestamp %v, got %v", timestamp, candle.Timestamp)
 	}
-	if candle.Open != 1.0500 {
-		t.Errorf("Expected open 1.0500, got %v", candle.Open)
+	
+	if candle.Open != 1.1000 {
+		t.Errorf("Expected open 1.1000, got %f", candle.Open)
 	}
-	if candle.High != 1.0520 {
-		t.Errorf("Expected high 1.0520, got %v", candle.High)
+	
+	if candle.High != 1.1010 {
+		t.Errorf("Expected high 1.1010, got %f", candle.High)
 	}
-	if candle.Low != 1.0490 {
-		t.Errorf("Expected low 1.0490, got %v", candle.Low)
+	
+	if candle.Low != 1.0990 {
+		t.Errorf("Expected low 1.0990, got %f", candle.Low)
 	}
-	if candle.Close != 1.0510 {
-		t.Errorf("Expected close 1.0510, got %v", candle.Close)
+	
+	if candle.Close != 1.1005 {
+		t.Errorf("Expected close 1.1005, got %f", candle.Close)
 	}
-	if candle.Volume != 1000 {
-		t.Errorf("Expected volume 1000, got %v", candle.Volume)
+	
+	if candle.Volume != 1000.0 {
+		t.Errorf("Expected volume 1000.0, got %f", candle.Volume)
 	}
 }
 
-func TestCandle_IsValid(t *testing.T) {
-	tests := []struct {
-		name     string
-		candle   Candle
-		expected bool
-	}{
-		{
-			name: "valid candle",
-			candle: Candle{
-				Timestamp: time.Now(),
-				Open:      1.0500,
-				High:      1.0520,
-				Low:       1.0490,
-				Close:     1.0510,
-				Volume:    1000,
-			},
-			expected: true,
-		},
-		{
-			name: "invalid - high less than open",
-			candle: Candle{
-				Timestamp: time.Now(),
-				Open:      1.0500,
-				High:      1.0480,
-				Low:       1.0490,
-				Close:     1.0510,
-				Volume:    1000,
-			},
-			expected: false,
-		},
-		{
-			name: "invalid - low greater than close",
-			candle: Candle{
-				Timestamp: time.Now(),
-				Open:      1.0500,
-				High:      1.0520,
-				Low:       1.0515,
-				Close:     1.0510,
-				Volume:    1000,
-			},
-			expected: false,
-		},
-		{
-			name: "invalid - negative volume",
-			candle: Candle{
-				Timestamp: time.Now(),
-				Open:      1.0500,
-				High:      1.0520,
-				Low:       1.0490,
-				Close:     1.0510,
-				Volume:    -100,
-			},
-			expected: false,
-		},
+func TestCandle_Validate(t *testing.T) {
+	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	
+	// 正常なケース
+	candle := NewCandle(timestamp, 1.1000, 1.1010, 1.0990, 1.1005, 1000.0)
+	if err := candle.Validate(); err != nil {
+		t.Errorf("Expected no error for valid candle, got %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.candle.IsValid(); got != tt.expected {
-				t.Errorf("Candle.IsValid() = %v, want %v", got, tt.expected)
-			}
-		})
+	
+	// 異常なケース - High < Low
+	candle = NewCandle(timestamp, 1.1000, 1.0990, 1.1010, 1.1005, 1000.0)
+	if err := candle.Validate(); err == nil {
+		t.Error("Expected error when high < low")
+	}
+	
+	// 異常なケース - 負の価格
+	candle = NewCandle(timestamp, -1.1000, 1.1010, 1.0990, 1.1005, 1000.0)
+	if err := candle.Validate(); err == nil {
+		t.Error("Expected error for negative price")
+	}
+	
+	// 異常なケース - 負のボリューム
+	candle = NewCandle(timestamp, 1.1000, 1.1010, 1.0990, 1.1005, -1000.0)
+	if err := candle.Validate(); err == nil {
+		t.Error("Expected error for negative volume")
 	}
 }
 
-func TestCandle_IsBullish(t *testing.T) {
-	bullishCandle := Candle{
-		Open:  1.0500,
-		Close: 1.0510,
+func TestCandle_IsValidOHLC(t *testing.T) {
+	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	
+	// 正常なケース
+	candle := NewCandle(timestamp, 1.1000, 1.1010, 1.0990, 1.1005, 1000.0)
+	if !candle.IsValidOHLC() {
+		t.Error("Expected valid OHLC")
 	}
 	
-	bearishCandle := Candle{
-		Open:  1.0510,
-		Close: 1.0500,
+	// 異常なケース - High < Open
+	candle = NewCandle(timestamp, 1.1010, 1.1000, 1.0990, 1.1005, 1000.0)
+	if candle.IsValidOHLC() {
+		t.Error("Expected invalid OHLC when high < open")
 	}
 	
-	if !bullishCandle.IsBullish() {
-		t.Error("Expected bullish candle to return true")
-	}
-	
-	if bearishCandle.IsBullish() {
-		t.Error("Expected bearish candle to return false")
+	// 異常なケース - Low > Close
+	candle = NewCandle(timestamp, 1.1000, 1.1010, 1.1010, 1.1005, 1000.0)
+	if candle.IsValidOHLC() {
+		t.Error("Expected invalid OHLC when low > close")
 	}
 }
 
-func TestCandle_IsBearish(t *testing.T) {
-	bullishCandle := Candle{
-		Open:  1.0500,
-		Close: 1.0510,
+func TestCandle_ToCSVRecord(t *testing.T) {
+	timestamp := time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC)
+	candle := NewCandle(timestamp, 1.10000, 1.10100, 1.09900, 1.10050, 1000.0)
+	
+	record := candle.ToCSVRecord()
+	
+	expectedLength := 6
+	if len(record) != expectedLength {
+		t.Errorf("Expected CSV record length %d, got %d", expectedLength, len(record))
 	}
 	
-	bearishCandle := Candle{
-		Open:  1.0510,
-		Close: 1.0500,
+	expectedTimestamp := "2024-01-01 12:30:00"
+	if record[0] != expectedTimestamp {
+		t.Errorf("Expected timestamp %s, got %s", expectedTimestamp, record[0])
 	}
 	
-	if bullishCandle.IsBearish() {
-		t.Error("Expected bullish candle to return false")
+	expectedOpen := "1.10000"
+	if record[1] != expectedOpen {
+		t.Errorf("Expected open %s, got %s", expectedOpen, record[1])
 	}
 	
-	if !bearishCandle.IsBearish() {
-		t.Error("Expected bearish candle to return true")
-	}
-}
-
-func TestCandle_BodySize(t *testing.T) {
-	candle := Candle{
-		Open:  1.0500,
-		Close: 1.0510,
-	}
-	
-	expected := 0.0010
-	got := candle.BodySize()
-	if math.Abs(got-expected) > 1e-10 {
-		t.Errorf("Expected body size %v, got %v", expected, got)
+	expectedVolume := "1000"
+	if record[5] != expectedVolume {
+		t.Errorf("Expected volume %s, got %s", expectedVolume, record[5])
 	}
 }

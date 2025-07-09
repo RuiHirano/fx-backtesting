@@ -1,80 +1,98 @@
 package models
 
-// Config holds the configuration for backtesting
+import (
+	"errors"
+	"strings"
+)
+
+// Config はバックテスト全体の設定を管理します。
 type Config struct {
-	InitialBalance float64 // Initial balance in base currency
-	Spread         float64 // Bid-ask spread
-	Commission     float64 // Commission rate (percentage)
-	Slippage       float64 // Slippage in pips
-	Leverage       float64 // Leverage ratio
+	Market MarketConfig `json:"market"`
+	Broker BrokerConfig `json:"broker"`
 }
 
-// NewConfig creates a new Config instance
-func NewConfig(initialBalance, spread, commission, slippage, leverage float64) Config {
+// MarketConfig は市場データに関する設定です。
+type MarketConfig struct {
+	DataProvider DataProviderConfig `json:"data_provider"`
+	Symbol       string             `json:"symbol"`
+}
+
+// DataProviderConfig はデータソースに関する設定です。
+type DataProviderConfig struct {
+	FilePath string `json:"file_path"`
+	Format   string `json:"format"`
+}
+
+// BrokerConfig はブローカーに関する設定です。
+type BrokerConfig struct {
+	InitialBalance float64 `json:"initial_balance"`
+	Spread         float64 `json:"spread"`
+}
+
+// NewDefaultConfig はデフォルト設定を生成します。
+func NewDefaultConfig() Config {
 	return Config{
-		InitialBalance: initialBalance,
-		Spread:         spread,
-		Commission:     commission,
-		Slippage:       slippage,
-		Leverage:       leverage,
+		Market: MarketConfig{
+			DataProvider: DataProviderConfig{
+				Format: "csv",
+			},
+			Symbol: "EURUSD",
+		},
+		Broker: BrokerConfig{
+			InitialBalance: 10000.0,
+			Spread:         0.0001, // 1 pip
+		},
 	}
 }
 
-// DefaultConfig returns a configuration with default values
-func DefaultConfig() Config {
-	return Config{
-		InitialBalance: 10000.0, // $10,000
-		Spread:         0.0001,  // 1 pip
-		Commission:     0.0,     // No commission
-		Slippage:       0.0,     // No slippage
-		Leverage:       100.0,   // 1:100 leverage
+// Validate は設定の妥当性を検証します。
+func (c *Config) Validate() error {
+	if err := c.Market.Validate(); err != nil {
+		return err
 	}
+	
+	if err := c.Broker.Validate(); err != nil {
+		return err
+	}
+	
+	return nil
 }
 
-// IsValid checks if the configuration is valid
-func (c Config) IsValid() bool {
-	if c.InitialBalance <= 0 {
-		return false
+// Validate はMarketConfigの妥当性を検証します。
+func (mc *MarketConfig) Validate() error {
+	if err := mc.DataProvider.Validate(); err != nil {
+		return err
 	}
 	
-	if c.Spread < 0 {
-		return false
+	if strings.TrimSpace(mc.Symbol) == "" {
+		return errors.New("symbol is required")
 	}
 	
-	if c.Commission < 0 {
-		return false
-	}
-	
-	if c.Slippage < 0 {
-		return false
-	}
-	
-	if c.Leverage <= 0 {
-		return false
-	}
-	
-	return true
+	return nil
 }
 
-// CalculateMarginRequired calculates the margin required for a position
-func (c Config) CalculateMarginRequired(positionSize, entryPrice float64) float64 {
-	return (positionSize * entryPrice) / c.Leverage
-}
-
-// CalculateCommission calculates the commission for a trade
-func (c Config) CalculateCommission(positionSize, entryPrice float64) float64 {
-	return positionSize * entryPrice * c.Commission
-}
-
-// ApplySpread applies the spread to get the actual execution price
-func (c Config) ApplySpread(midPrice float64, side OrderSide) float64 {
-	halfSpread := c.Spread / 2.0
-	
-	if side == OrderSideBuy {
-		// Buy at ask price (higher)
-		return midPrice + halfSpread
-	} else {
-		// Sell at bid price (lower)
-		return midPrice - halfSpread
+// Validate はDataProviderConfigの妥当性を検証します。
+func (dpc *DataProviderConfig) Validate() error {
+	if strings.TrimSpace(dpc.FilePath) == "" {
+		return errors.New("file path is required")
 	}
+	
+	if dpc.Format != "csv" && dpc.Format != "json" {
+		return errors.New("format must be 'csv' or 'json'")
+	}
+	
+	return nil
+}
+
+// Validate はBrokerConfigの妥当性を検証します。
+func (bc *BrokerConfig) Validate() error {
+	if bc.InitialBalance <= 0 {
+		return errors.New("initial balance must be positive")
+	}
+	
+	if bc.Spread < 0 {
+		return errors.New("spread must be non-negative")
+	}
+	
+	return nil
 }

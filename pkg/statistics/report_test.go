@@ -1,286 +1,277 @@
 package statistics
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/RuiHirano/fx-backtesting/pkg/backtester"
+	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
-func TestNewReportGenerator(t *testing.T) {
-	generator := NewReportGenerator()
+// Report NewReport テスト
+func TestReport_NewReport(t *testing.T) {
+	trades := createTestTrades()
+	initialBalance := 10000.0
 	
-	if generator == nil {
-		t.Fatal("Expected report generator to be created")
+	report := NewReport(trades, initialBalance)
+	
+	if report == nil {
+		t.Fatal("Expected report to be created")
+	}
+	
+	if report.calculator == nil {
+		t.Fatal("Expected calculator to be initialized")
+	}
+	
+	if report.result == nil {
+		t.Fatal("Expected result to be initialized")
+	}
+	
+	// 基本的な結果確認
+	if report.result.InitialBalance != initialBalance {
+		t.Errorf("Expected initial balance %f, got %f", initialBalance, report.result.InitialBalance)
+	}
+	
+	if report.result.TotalTrades != len(trades) {
+		t.Errorf("Expected %d trades, got %d", len(trades), report.result.TotalTrades)
 	}
 }
 
-func TestReportGenerator_GenerateTextReport(t *testing.T) {
-	generator := NewReportGenerator()
-	calc := NewCalculator()
+// Report GenerateTextReport テスト
+func TestReport_GenerateTextReport(t *testing.T) {
+	trades := createTestTrades()
+	report := NewReport(trades, 10000.0)
 	
-	// Create sample result
-	result := &backtester.Result{
-		StartTime:      time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		EndTime:        time.Date(2024, 1, 1, 17, 0, 0, 0, time.UTC),
-		Duration:       8 * time.Hour,
-		InitialBalance: 10000.0,
-		FinalBalance:   11000.0,
-		TotalPnL:       1000.0,
-		TotalTrades:    5,
-		WinningTrades:  3,
-		LosingTrades:   2,
-		WinRate:        60.0,
-		MaxDrawdown:    5.0,
-		Trades: []backtester.TradeResult{
-			{PnL: 200.0, Duration: time.Hour},
-			{PnL: -100.0, Duration: 30 * time.Minute},
-			{PnL: 300.0, Duration: 2 * time.Hour},
-			{PnL: -50.0, Duration: 45 * time.Minute},
-			{PnL: 650.0, Duration: 3 * time.Hour},
-		},
+	textReport := report.GenerateTextReport()
+	
+	if textReport == "" {
+		t.Fatal("Expected text report to be generated")
 	}
 	
-	metrics := calc.CalculateMetrics(result)
-	report := generator.GenerateTextReport(result, metrics)
-	
-	if report == "" {
-		t.Error("Expected non-empty text report")
+	// レポートに必要な要素が含まれているかチェック
+	requiredElements := []string{
+		"バックテスト結果レポート",
+		"基本情報",
+		"損益情報",
+		"取引統計",
+		"リスク指標",
+		"取引パフォーマンス",
+		"初期残高",
+		"最終残高",
+		"総損益",
+		"勝率",
+		"シャープレシオ",
+		"最大ドローダウン",
 	}
 	
-	// Check that report contains key information
-	expectedContents := []string{
-		"BACKTEST RESULTS",
-		"PERFORMANCE SUMMARY",
-		"TRADE STATISTICS",
-		"RISK METRICS",
-		"Total Return",
-		"Win Rate",
-		"Sharpe Ratio",
-		"Max Drawdown",
-	}
-	
-	for _, content := range expectedContents {
-		if !strings.Contains(report, content) {
-			t.Errorf("Report missing expected content: %s", content)
+	for _, element := range requiredElements {
+		if !strings.Contains(textReport, element) {
+			t.Errorf("Text report missing required element: %s", element)
 		}
 	}
 }
 
-func TestReportGenerator_GenerateJSONReport(t *testing.T) {
-	generator := NewReportGenerator()
-	calc := NewCalculator()
+// Report GenerateJSONReport テスト
+func TestReport_GenerateJSONReport(t *testing.T) {
+	trades := createTestTrades()
+	report := NewReport(trades, 10000.0)
 	
-	// Create sample result
-	result := &backtester.Result{
-		StartTime:      time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		EndTime:        time.Date(2024, 1, 1, 17, 0, 0, 0, time.UTC),
-		Duration:       8 * time.Hour,
-		InitialBalance: 10000.0,
-		FinalBalance:   11000.0,
-		TotalPnL:       1000.0,
-		TotalTrades:    5,
-		WinningTrades:  3,
-		LosingTrades:   2,
-		WinRate:        60.0,
-		MaxDrawdown:    5.0,
-		Trades: []backtester.TradeResult{
-			{PnL: 200.0},
-			{PnL: -100.0},
-		},
-	}
-	
-	metrics := calc.CalculateMetrics(result)
-	jsonReport := generator.GenerateJSONReport(result, metrics)
+	jsonReport := report.GenerateJSONReport()
 	
 	if jsonReport == "" {
-		t.Error("Expected non-empty JSON report")
+		t.Fatal("Expected JSON report to be generated")
 	}
 	
-	// Verify it's valid JSON
-	var reportData map[string]interface{}
-	err := json.Unmarshal([]byte(jsonReport), &reportData)
-	if err != nil {
-		t.Fatalf("Invalid JSON report: %v", err)
+	// JSON形式の基本的な構造確認
+	requiredFields := []string{
+		"summary",
+		"detailed_metrics",
+		"initial_balance",
+		"final_balance",
+		"total_pnl",
+		"total_return",
+		"win_rate",
+		"profit_factor",
+		"sharpe_ratio",
+		"max_drawdown",
 	}
 	
-	// Check that key sections exist
-	expectedSections := []string{"backtest_summary", "performance_metrics", "trade_statistics", "risk_metrics"}
-	for _, section := range expectedSections {
-		if _, exists := reportData[section]; !exists {
-			t.Errorf("JSON report missing section: %s", section)
+	for _, field := range requiredFields {
+		if !strings.Contains(jsonReport, field) {
+			t.Errorf("JSON report missing required field: %s", field)
 		}
+	}
+	
+	// JSON形式かどうかの基本チェック
+	if !strings.HasPrefix(jsonReport, "{") || !strings.HasSuffix(strings.TrimSpace(jsonReport), "}") {
+		t.Error("Expected JSON report to be in valid JSON format")
 	}
 }
 
-func TestReportGenerator_GenerateCSVReport(t *testing.T) {
-	generator := NewReportGenerator()
+// Report GenerateCSVReport テスト
+func TestReport_GenerateCSVReport(t *testing.T) {
+	trades := createTestTrades()
+	report := NewReport(trades, 10000.0)
 	
-	// Create sample trades
-	trades := []backtester.TradeResult{
-		{
-			EntryTime:  time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-			ExitTime:   time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC),
-			Symbol:     "EURUSD",
-			Side:       0, // Buy
-			Size:       1000.0,
-			EntryPrice: 1.0500,
-			ExitPrice:  1.0520,
-			PnL:        200.0,
-			Duration:   time.Hour,
-		},
-		{
-			EntryTime:  time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC),
-			ExitTime:   time.Date(2024, 1, 1, 11, 30, 0, 0, time.UTC),
-			Symbol:     "EURUSD",
-			Side:       1, // Sell
-			Size:       1000.0,
-			EntryPrice: 1.0520,
-			ExitPrice:  1.0510,
-			PnL:        100.0,
-			Duration:   30 * time.Minute,
-		},
-	}
-	
-	csvReport := generator.GenerateCSVReport(trades)
+	csvReport := report.GenerateCSVReport()
 	
 	if csvReport == "" {
-		t.Error("Expected non-empty CSV report")
+		t.Fatal("Expected CSV report to be generated")
 	}
 	
-	// Check CSV headers
-	lines := strings.Split(csvReport, "\n")
-	if len(lines) < 2 {
-		t.Error("Expected at least header and one data row")
+	lines := strings.Split(strings.TrimSpace(csvReport), "\n")
+	
+	// ヘッダー行 + データ行の確認
+	expectedLines := len(trades) + 1 // ヘッダー + データ
+	if len(lines) != expectedLines {
+		t.Errorf("Expected %d lines in CSV, got %d", expectedLines, len(lines))
 	}
 	
-	header := lines[0]
-	expectedHeaders := []string{"Entry Time", "Exit Time", "Symbol", "Side", "Size", "Entry Price", "Exit Price", "PnL", "Duration"}
-	for _, expectedHeader := range expectedHeaders {
-		if !strings.Contains(header, expectedHeader) {
-			t.Errorf("CSV header missing: %s", expectedHeader)
-		}
+	// ヘッダー確認
+	expectedHeader := "ID,Symbol,Side,Size,EntryPrice,ExitPrice,PnL,Status,OpenTime,CloseTime,DurationHours"
+	if lines[0] != expectedHeader {
+		t.Errorf("Expected CSV header: %s, got: %s", expectedHeader, lines[0])
 	}
 	
-	// Check data rows
-	if len(lines) < 3 {
-		t.Error("Expected at least 2 data rows")
-	}
-}
-
-func TestReportGenerator_GenerateDetailedReport(t *testing.T) {
-	generator := NewReportGenerator()
-	calc := NewCalculator()
-	
-	// Create comprehensive test data
-	result := &backtester.Result{
-		StartTime:      time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		EndTime:        time.Date(2024, 12, 31, 17, 0, 0, 0, time.UTC),
-		Duration:       365 * 24 * time.Hour,
-		InitialBalance: 10000.0,
-		FinalBalance:   12000.0,
-		TotalPnL:       2000.0,
-		TotalTrades:    100,
-		WinningTrades:  60,
-		LosingTrades:   40,
-		WinRate:        60.0,
-		MaxDrawdown:    8.5,
-		Trades:         generateTestTrades(100),
-	}
-	
-	metrics := calc.CalculateMetrics(result)
-	report := generator.GenerateDetailedReport(result, metrics)
-	
-	if report == "" {
-		t.Error("Expected non-empty detailed report")
-	}
-	
-	// Check for detailed sections
-	expectedSections := []string{
-		"DETAILED BACKTEST ANALYSIS",
-		"EXECUTIVE SUMMARY",
-		"PERFORMANCE ANALYSIS",
-		"RISK ANALYSIS",
-		"TRADE DISTRIBUTION",
-		"MONTHLY PERFORMANCE",
-	}
-	
-	for _, section := range expectedSections {
-		if !strings.Contains(report, section) {
-			t.Errorf("Detailed report missing section: %s", section)
+	// データ行の基本確認
+	for i := 1; i < len(lines); i++ {
+		fields := strings.Split(lines[i], ",")
+		if len(fields) < 11 { // 最低限のフィールド数
+			t.Errorf("Expected at least 11 fields in CSV line %d, got %d", i, len(fields))
 		}
 	}
 }
 
-func TestReportGenerator_FormatDuration(t *testing.T) {
-	generator := NewReportGenerator()
+// Report GenerateReport（フォーマット指定）テスト
+func TestReport_GenerateReport(t *testing.T) {
+	trades := createTestTrades()
+	report := NewReport(trades, 10000.0)
 	
-	testCases := []struct {
-		duration time.Duration
-		expected string
-	}{
-		{time.Hour, "1h 0m"},
-		{90 * time.Minute, "1h 30m"},
-		{30 * time.Minute, "0h 30m"},
-		{25 * time.Hour, "1d 1h"},
-		{0, "0h 0m"},
+	// テキスト形式
+	textReport := report.GenerateReport(FormatText)
+	if !strings.Contains(textReport, "バックテスト結果レポート") {
+		t.Error("Expected text format report")
 	}
 	
-	for _, tc := range testCases {
-		formatted := generator.formatDuration(tc.duration)
-		if formatted != tc.expected {
-			t.Errorf("Expected duration format %s, got %s", tc.expected, formatted)
-		}
-	}
-}
-
-func TestReportGenerator_FormatPercentage(t *testing.T) {
-	generator := NewReportGenerator()
-	
-	testCases := []struct {
-		value    float64
-		expected string
-	}{
-		{15.5678, "15.57%"},
-		{-5.1234, "-5.12%"},
-		{0.0, "0.00%"},
-		{100.0, "100.00%"},
+	// JSON形式
+	jsonReport := report.GenerateReport(FormatJSON)
+	if !strings.Contains(jsonReport, "summary") {
+		t.Error("Expected JSON format report")
 	}
 	
-	for _, tc := range testCases {
-		formatted := generator.formatPercentage(tc.value)
-		if formatted != tc.expected {
-			t.Errorf("Expected percentage format %s, got %s", tc.expected, formatted)
-		}
+	// CSV形式
+	csvReport := report.GenerateReport(FormatCSV)
+	if !strings.Contains(csvReport, "ID,Symbol,Side") {
+		t.Error("Expected CSV format report")
 	}
 }
 
-// Helper function to generate test trades
-func generateTestTrades(count int) []backtester.TradeResult {
-	trades := make([]backtester.TradeResult, count)
-	baseTime := time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC)
+// Report GetSummaryMetrics テスト
+func TestReport_GetSummaryMetrics(t *testing.T) {
+	trades := createTestTrades()
+	report := NewReport(trades, 10000.0)
 	
-	for i := 0; i < count; i++ {
-		// Generate alternating wins and losses with some randomness
-		pnl := float64(100 + i*5)
-		if i%3 == 0 {
-			pnl = -pnl / 2 // Some losses
-		}
-		
-		trades[i] = backtester.TradeResult{
-			EntryTime:  baseTime.Add(time.Duration(i) * time.Hour),
-			ExitTime:   baseTime.Add(time.Duration(i+1) * time.Hour),
-			Symbol:     "EURUSD",
-			Side:       0,
-			Size:       1000.0,
-			EntryPrice: 1.0500 + float64(i)*0.0001,
-			ExitPrice:  1.0500 + float64(i)*0.0001 + pnl/10000,
-			PnL:        pnl,
-			Duration:   time.Hour,
+	metrics := report.GetSummaryMetrics()
+	
+	if metrics == nil {
+		t.Fatal("Expected summary metrics to be returned")
+	}
+	
+	// 必要なメトリクスが含まれているか確認
+	requiredMetrics := []string{
+		"total_return",
+		"total_trades",
+		"win_rate",
+		"profit_factor",
+		"max_drawdown",
+		"sharpe_ratio",
+		"sortino_ratio",
+		"calmar_ratio",
+		"risk_reward_ratio",
+		"max_consecutive_wins",
+		"max_consecutive_losses",
+		"trading_frequency",
+		"average_holding_period",
+	}
+	
+	for _, metric := range requiredMetrics {
+		if _, exists := metrics[metric]; !exists {
+			t.Errorf("Summary metrics missing required metric: %s", metric)
 		}
 	}
 	
-	return trades
+	// データ型の基本確認
+	if totalTrades, ok := metrics["total_trades"].(int); !ok || totalTrades != len(trades) {
+		t.Errorf("Expected total_trades to be %d, got %v", len(trades), metrics["total_trades"])
+	}
+}
+
+// Report GenerateCompactSummary テスト
+func TestReport_GenerateCompactSummary(t *testing.T) {
+	trades := createTestTrades()
+	report := NewReport(trades, 10000.0)
+	
+	summary := report.GenerateCompactSummary()
+	
+	if summary == "" {
+		t.Fatal("Expected compact summary to be generated")
+	}
+	
+	// 簡潔なサマリーに含まれるべき要素
+	requiredElements := []string{
+		"リターン",
+		"取引数",
+		"勝率",
+		"PF", // Profit Factor
+		"DD", // Drawdown
+		"SR", // Sharpe Ratio
+	}
+	
+	for _, element := range requiredElements {
+		if !strings.Contains(summary, element) {
+			t.Errorf("Compact summary missing required element: %s", element)
+		}
+	}
+	
+	// パーセンテージ記号の確認
+	if !strings.Contains(summary, "%") {
+		t.Error("Expected compact summary to contain percentage symbols")
+	}
+}
+
+// Report エラーハンドリングテスト
+func TestReport_ErrorHandling(t *testing.T) {
+	// 空の取引履歴でのレポート生成
+	emptyTrades := []*models.Trade{}
+	report := NewReport(emptyTrades, 10000.0)
+	
+	// テキストレポート
+	textReport := report.GenerateTextReport()
+	if textReport == "" {
+		t.Error("Expected text report to be generated even with empty trades")
+	}
+	
+	// JSONレポート
+	jsonReport := report.GenerateJSONReport()
+	if jsonReport == "" {
+		t.Error("Expected JSON report to be generated even with empty trades")
+	}
+	
+	// CSVレポート（ヘッダーのみになる）
+	csvReport := report.GenerateCSVReport()
+	lines := strings.Split(strings.TrimSpace(csvReport), "\n")
+	if len(lines) != 1 { // ヘッダーのみ
+		t.Errorf("Expected 1 line (header only) in empty CSV, got %d", len(lines))
+	}
+	
+	// サマリーメトリクス
+	metrics := report.GetSummaryMetrics()
+	if metrics == nil {
+		t.Error("Expected summary metrics to be returned even with empty trades")
+	}
+	
+	// 簡潔サマリー
+	summary := report.GenerateCompactSummary()
+	if summary == "" {
+		t.Error("Expected compact summary to be generated even with empty trades")
+	}
 }

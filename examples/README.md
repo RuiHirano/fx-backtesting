@@ -1,145 +1,170 @@
-# FX Backtesting Library - Examples
+# FX Backtesting Examples
 
-This directory contains practical examples demonstrating how to use the FX backtesting library.
+このディレクトリには、FX バックテストライブラリの使用例が含まれています。
 
-## Examples Overview
+## 含まれる例
 
-### 1. Basic Example (`basic_example.go`)
-A simple introduction to the library showing:
-- Basic configuration setup
-- Loading CSV data
-- Running a moving average crossover strategy
-- Generating text reports
-- Interpreting results
+### 1. basic_example.go
+基本的なバックテストの実行例です。
 
-**Run:**
+**機能:**
+- 簡単な設定でのバックテスト実行
+- 基本的な買い戦略の実装
+- 結果の表示
+
+**実行方法:**
 ```bash
-cd examples
 go run basic_example.go
 ```
 
-### 2. Advanced Example (`advanced_example.go`)
-Demonstrates advanced features including:
-- Strategy optimization across multiple parameter sets
-- Performance comparison between strategies
-- Automated report generation (text, JSON, CSV)
-- Risk assessment and recommendations
+### 2. strategy_example.go
+移動平均クロス戦略を使用した高度なバックテスト例です。
 
-**Run:**
+**機能:**
+- 短期・長期移動平均の計算
+- ゴールデンクロス/デッドクロス戦略
+- 詳細な統計レポート生成
+
+**実行方法:**
 ```bash
-cd examples
-go run advanced_example.go
+go run strategy_example.go
 ```
 
-### 3. Configuration File (`config.json`)
-Sample JSON configuration file showing custom settings:
-- Initial balance: $5,000
-- Spread: 2 pips
-- Commission: $1 per trade
-- Leverage: 1:50
+### 3. config_example.go
+各種設定パターンの比較例です。
 
-## CLI Usage Examples
+**機能:**
+- 複数の設定での同時バックテスト
+- 設定による結果の違いの比較
+- 残高に応じた取引サイズの調整
 
-### Basic CLI Usage
+**実行方法:**
 ```bash
-# Simple backtest with default settings
-go run ../cmd/backtester/main.go --data ../testdata/sample.csv
-
-# Custom strategy parameters
-go run ../cmd/backtester/main.go \
-  --data ../testdata/sample.csv \
-  --fast-period 5 \
-  --slow-period 20 \
-  --position-size 2000
-
-# Generate JSON report
-go run ../cmd/backtester/main.go \
-  --data ../testdata/sample.csv \
-  --format json \
-  --output results.json
-
-# Use custom configuration
-go run ../cmd/backtester/main.go \
-  --data ../testdata/sample.csv \
-  --config config.json \
-  --output detailed_report.txt
+go run config_example.go
 ```
 
-### Advanced CLI Usage
-```bash
-# High-frequency scalping strategy
-go run ../cmd/backtester/main.go \
-  --data ../testdata/sample.csv \
-  --fast-period 2 \
-  --slow-period 5 \
-  --position-size 500 \
-  --format json
+## 前提条件
 
-# Conservative long-term strategy
-go run ../cmd/backtester/main.go \
-  --data ../testdata/sample.csv \
-  --fast-period 20 \
-  --slow-period 50 \
-  --position-size 1000 \
-  --output conservative_results.txt
+### データファイル
+これらの例を実行するには、以下の場所にデータファイルが必要です：
+- `../testdata/USDJPY_2024_01.csv`
 
-# Export trade details to CSV
-go run ../cmd/backtester/main.go \
-  --data ../testdata/sample.csv \
-  --format csv \
-  --output trades.csv
-```
-
-## Data Format
-
-The library expects CSV files with the following format:
+### データファイル形式
+CSV ファイルは以下の形式である必要があります：
 ```csv
 timestamp,open,high,low,close,volume
-2024-01-01 09:00:00,1.0500,1.0520,1.0490,1.0510,1000
-2024-01-01 09:01:00,1.0510,1.0530,1.0500,1.0520,1200
+2024-01-01 00:00:00,150.00,150.10,149.90,150.05,1000
+2024-01-01 00:01:00,150.05,150.15,149.95,150.10,1200
 ...
 ```
 
-## Strategy Customization
+## CLI アプリケーション
 
-You can customize the moving average strategy by adjusting:
-- **Fast Period**: Shorter period for quick signal detection
-- **Slow Period**: Longer period for trend confirmation
-- **Position Size**: Units to trade per signal
+実際のデータでバックテストを実行するには、CLI アプリケーションを使用できます：
 
-## Output Formats
+```bash
+# CLI アプリケーションをビルド
+go build -o backtester ../cmd/backtester/main.go
 
-### Text Report
-Human-readable summary with:
-- Performance metrics
-- Trade statistics
-- Risk analysis
-- Executive summary
+# 基本的な実行
+./backtester -data ../testdata/USDJPY_2024_01.csv -config config.json
 
-### JSON Report
-Machine-readable format for:
-- Programmatic analysis
-- Data visualization
-- Integration with other tools
+# JSON形式で結果を出力
+./backtester -data ../testdata/USDJPY_2024_01.csv -config config.json -format json
 
-### CSV Report
-Trade-by-trade details for:
-- Detailed analysis
-- Spreadsheet import
-- Custom reporting
+# ファイルに結果を保存
+./backtester -data ../testdata/USDJPY_2024_01.csv -config config.json -output results.txt
+```
 
-## Performance Tips
+## 設定ファイル例
 
-1. **Larger Datasets**: Use more historical data for robust results
-2. **Parameter Optimization**: Test multiple strategy configurations
-3. **Risk Management**: Monitor drawdown and Sharpe ratios
-4. **Market Conditions**: Analyze performance across different periods
-5. **Transaction Costs**: Include realistic spreads and commissions
+### config.json
+```json
+{
+  "market": {
+    "data_provider": {
+      "file_path": "../testdata/USDJPY_2024_01.csv",
+      "format": "csv"
+    },
+    "symbol": "USDJPY"
+  },
+  "broker": {
+    "initial_balance": 100000.0,
+    "spread": 0.01
+  }
+}
+```
 
-## Next Steps
+## カスタム戦略の実装
 
-1. Try the basic example first to understand the workflow
-2. Experiment with different strategy parameters
-3. Use the advanced example for strategy optimization
-4. Implement your own custom strategies using the framework
-5. Backtest on longer historical datasets for production use
+独自の戦略を実装するには、以下のパターンを参考にしてください：
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/RuiHirano/fx-backtesting/pkg/backtester"
+    "github.com/RuiHirano/fx-backtesting/pkg/models"
+)
+
+func main() {
+    // 1. 設定
+    dataConfig := models.DataProviderConfig{
+        FilePath: "your_data.csv",
+        Format:   "csv",
+    }
+    brokerConfig := models.BrokerConfig{
+        InitialBalance: 100000.0,
+        Spread:         0.01,
+    }
+    
+    // 2. Backtester作成・初期化
+    bt := backtester.NewBacktester(dataConfig, brokerConfig)
+    ctx := context.Background()
+    bt.Initialize(ctx)
+    
+    // 3. 戦略ループ
+    for !bt.IsFinished() {
+        // 現在価格取得
+        price := bt.GetCurrentPrice("USDJPY")
+        
+        // あなたの戦略ロジック
+        if shouldBuy(price) {
+            bt.Buy("USDJPY", 1000.0)
+        }
+        
+        if shouldSell(price) {
+            bt.Sell("USDJPY", 1000.0)
+        }
+        
+        // 時間進行
+        bt.Forward()
+    }
+    
+    // 4. 結果確認
+    finalBalance := bt.GetBalance()
+    // ...
+}
+
+func shouldBuy(price float64) bool {
+    // あなたの買い条件
+    return false
+}
+
+func shouldSell(price float64) bool {
+    // あなたの売り条件
+    return false
+}
+```
+
+## 注意事項
+
+1. **データの品質**: 正確なバックテストには高品質なデータが必要です
+2. **スプレッド**: 実際の取引コストを反映するようにスプレッドを設定してください
+3. **オーバーフィッティング**: 過去のデータに最適化しすぎないよう注意してください
+4. **リスク管理**: 実際の取引では適切なリスク管理が重要です
+
+## サポート
+
+質問や問題がある場合は、プロジェクトのメインドキュメントを参照してください。

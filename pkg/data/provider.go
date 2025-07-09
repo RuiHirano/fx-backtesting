@@ -1,115 +1,107 @@
 package data
 
 import (
-	"bufio"
-	"fmt"
+	"context"
+	"errors"
+	"io"
 	"os"
-	"strconv"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
-// DataProvider defines the interface for data providers
+// CandleData はシンボル付きローソク足データを表します。
+type CandleData struct {
+	Symbol string
+	Candle *models.Candle
+}
+
+// DataProvider はデータ提供者のインターフェースです。
 type DataProvider interface {
-	LoadCSVData(filePath string) ([]models.Candle, error)
-	GetCandle(timestamp time.Time) (models.Candle, error)
+	StreamData(ctx context.Context) (<-chan CandleData, error)
 }
 
-// CSVDataProvider implements DataProvider for CSV files
-type CSVDataProvider struct {
-	candles map[time.Time]models.Candle
+// CSVProvider はCSVファイルからデータを提供します。
+type CSVProvider struct {
+	Config models.DataProviderConfig
 }
 
-// NewCSVDataProvider creates a new CSV data provider
-func NewCSVDataProvider() *CSVDataProvider {
-	return &CSVDataProvider{
-		candles: make(map[time.Time]models.Candle),
+// NewCSVProvider は新しいCSVProviderを作成します。
+func NewCSVProvider(config models.DataProviderConfig) *CSVProvider {
+	return &CSVProvider{
+		Config: config,
 	}
 }
 
-// LoadCSVData loads historical data from a CSV file
-func (p *CSVDataProvider) LoadCSVData(filePath string) ([]models.Candle, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+// StreamData はローソク足データをストリーミングします。
+func (p *CSVProvider) StreamData(ctx context.Context) (<-chan CandleData, error) {
+	// ファイルの存在確認
+	if _, err := os.Stat(p.Config.FilePath); os.IsNotExist(err) {
+		return nil, errors.New("file not found: " + p.Config.FilePath)
 	}
-	defer file.Close()
-
-	var candles []models.Candle
-	scanner := bufio.NewScanner(file)
 	
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		candle, err := parseCSVLine(line)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse line '%s': %w", line, err)
-		}
-
-		candles = append(candles, candle)
-		p.candles[candle.Timestamp] = candle
+	// ファイルを開く
+	file, err := os.Open(p.Config.FilePath)
+	if err != nil {
+		return nil, err
 	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file: %w", err)
-	}
-
-	return candles, nil
+	
+	// ファイル名からシンボルを推測
+	symbol := p.extractSymbolFromFilename(p.Config.FilePath)
+	
+	candleChan := make(chan CandleData, 10)
+	
+	go func() {
+		defer close(candleChan)
+		defer file.Close()
+		
+		parser := NewCSVParser(file)
+		
+		for {
+			candle, err := parser.Parse()
+			if err != nil {
+				if err == io.EOF {
+					// ファイル終端に達した
+					break
+				}
+				// パースエラーはログに記録してスキップ
+				continue
+			}
+			
+			// バリデーション
+			if err := candle.Validate(); err != nil {
+				// 無効なデータはスキップ
+				continue
+			}
+			
+			candleData := CandleData{
+				Symbol: symbol,
+				Candle: candle,
+			}
+			
+			select {
+			case candleChan <- candleData:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	
+	return candleChan, nil
 }
 
-// GetCandle retrieves a candle for a specific timestamp
-func (p *CSVDataProvider) GetCandle(timestamp time.Time) (models.Candle, error) {
-	candle, exists := p.candles[timestamp]
-	if !exists {
-		return models.Candle{}, fmt.Errorf("candle not found for timestamp: %v", timestamp)
+// extractSymbolFromFilename はファイル名からシンボルを推測します。
+func (p *CSVProvider) extractSymbolFromFilename(filename string) string {
+	base := filepath.Base(filename)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	
+	// 一般的なシンボル形式を推測
+	upper := strings.ToUpper(name)
+	if len(upper) >= 6 && (strings.Contains(upper, "USD") || strings.Contains(upper, "EUR") || strings.Contains(upper, "JPY")) {
+		return upper
 	}
-	return candle, nil
-}
-
-// parseCSVLine parses a single CSV line into a Candle
-func parseCSVLine(line string) (models.Candle, error) {
-	parts := strings.Split(line, ",")
-	if len(parts) != 6 {
-		return models.Candle{}, fmt.Errorf("invalid CSV format: expected 6 fields, got %d", len(parts))
-	}
-
-	// Parse timestamp
-	timestamp, err := time.Parse("2006-01-02 15:04:05", strings.TrimSpace(parts[0]))
-	if err != nil {
-		return models.Candle{}, fmt.Errorf("invalid timestamp format: %w", err)
-	}
-
-	// Parse OHLC values
-	open, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-	if err != nil {
-		return models.Candle{}, fmt.Errorf("invalid open price: %w", err)
-	}
-
-	high, err := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-	if err != nil {
-		return models.Candle{}, fmt.Errorf("invalid high price: %w", err)
-	}
-
-	low, err := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64)
-	if err != nil {
-		return models.Candle{}, fmt.Errorf("invalid low price: %w", err)
-	}
-
-	close, err := strconv.ParseFloat(strings.TrimSpace(parts[4]), 64)
-	if err != nil {
-		return models.Candle{}, fmt.Errorf("invalid close price: %w", err)
-	}
-
-	// Parse volume
-	volume, err := strconv.ParseInt(strings.TrimSpace(parts[5]), 10, 64)
-	if err != nil {
-		return models.Candle{}, fmt.Errorf("invalid volume: %w", err)
-	}
-
-	return models.NewCandle(timestamp, open, high, low, close, volume), nil
+	
+	// デフォルトはEURUSD
+	return "EURUSD"
 }
