@@ -95,13 +95,13 @@ func (p *CSVProvider) StreamData(ctx context.Context) (<-chan CandleData, error)
 func (p *CSVProvider) extractSymbolFromFilename(filename string) string {
 	base := filepath.Base(filename)
 	name := strings.TrimSuffix(base, filepath.Ext(base))
-	
-	// 一般的なシンボル形式を推測
-	upper := strings.ToUpper(name)
-	if len(upper) >= 6 && (strings.Contains(upper, "USD") || strings.Contains(upper, "EUR") || strings.Contains(upper, "JPY")) {
-		return upper
+
+	// "_"で分割して最初の部分をシンボルとする
+	parts := strings.Split(name, "_")
+	if len(parts) > 0 {
+		return strings.ToUpper(parts[0])
 	}
-	
+
 	// デフォルトはEURUSD
 	return "EURUSD"
 }

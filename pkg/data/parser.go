@@ -36,38 +36,39 @@ func (p *CSVParser) Parse() (*models.Candle, error) {
 		return p.Parse() // 再帰的に次の行を読む
 	}
 	
-	if len(record) < 6 {
-		return nil, fmt.Errorf("invalid CSV record: expected 6 fields, got %d", len(record))
+	if len(record) < 7 {
+		return nil, fmt.Errorf("invalid CSV record: expected 7 fields, got %d", len(record))
 	}
-	
-	// タイムスタンプの解析
-	timestamp, err := time.Parse("2006-01-02 15:04:05", record[0])
+
+	// タイムスタンプの解析 (日付と時間を結合)
+	timestampStr := fmt.Sprintf("%s %s", record[0], record[1])
+	timestamp, err := time.Parse("2006.01.02 15:04", timestampStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid timestamp: %w", err)
+		return nil, fmt.Errorf("invalid timestamp format '%s': %w", timestampStr, err)
 	}
-	
-	// 価格データの解析
-	open, err := strconv.ParseFloat(record[1], 64)
+
+	// 価格データの解析 (列のインデックスを修正)
+	open, err := strconv.ParseFloat(record[2], 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid open price: %w", err)
 	}
-	
-	high, err := strconv.ParseFloat(record[2], 64)
+
+	high, err := strconv.ParseFloat(record[3], 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid high price: %w", err)
 	}
-	
-	low, err := strconv.ParseFloat(record[3], 64)
+
+	low, err := strconv.ParseFloat(record[4], 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid low price: %w", err)
 	}
-	
-	close, err := strconv.ParseFloat(record[4], 64)
+
+	close, err := strconv.ParseFloat(record[5], 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid close price: %w", err)
 	}
-	
-	volume, err := strconv.ParseFloat(record[5], 64)
+
+	volume, err := strconv.ParseFloat(record[6], 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid volume: %w", err)
 	}
