@@ -15,23 +15,26 @@ type Broker interface {
 	GetBalance() float64
 	ClosePosition(positionID string) error
 	UpdatePositions()
+	GetTradeHistory() []*models.Trade
 }
 
 // SimpleBroker はBrokerインターフェースのシンプルな実装です。
 type SimpleBroker struct {
-	config    models.BrokerConfig
-	market    market.Market
-	balance   float64
-	positions map[string]*models.Position
+	config       models.BrokerConfig
+	market       market.Market
+	balance      float64
+	positions    map[string]*models.Position
+	tradeHistory []*models.Trade
 }
 
 // NewSimpleBroker は新しいSimpleBrokerを作成します。
 func NewSimpleBroker(config models.BrokerConfig, market market.Market) Broker {
 	return &SimpleBroker{
-		config:    config,
-		market:    market,
-		balance:   config.InitialBalance,
-		positions: make(map[string]*models.Position),
+		config:       config,
+		market:       market,
+		balance:      config.InitialBalance,
+		positions:    make(map[string]*models.Position),
+		tradeHistory: make([]*models.Trade, 0),
 	}
 }
 
@@ -127,10 +130,19 @@ func (b *SimpleBroker) ClosePosition(positionID string) error {
 	b.balance += requiredMargin // 証拠金返却
 	b.balance += pnl            // 損益反映
 
+	// 取引履歴を作成して保存
+	trade := models.NewTradeFromPosition(position, closePrice, pnl, b.market.GetCurrentTime())
+	b.tradeHistory = append(b.tradeHistory, trade)
+
 	// ポジション削除
 	delete(b.positions, positionID)
 
 	return nil
+}
+
+// GetTradeHistory は取引履歴を取得します。
+func (b *SimpleBroker) GetTradeHistory() []*models.Trade {
+	return b.tradeHistory
 }
 
 // UpdatePositions は全ポジションの現在価格を更新します。

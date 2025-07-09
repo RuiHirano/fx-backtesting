@@ -51,10 +51,10 @@ func runBacktestWithConfig(configName string, brokerConfig models.BrokerConfig) 
 		FilePath: "../testdata/USDJPY_2024_01.csv",
 		Format:   "csv",
 	}
-	
+
 	// Backtester作成
-	bt := backtester.NewBacktester(dataConfig, brokerConfig)
-	
+	bt := backtester.NewBacktester(dataConfig, brokerConfig);
+
 	// 初期化
 	ctx := context.Background()
 	err := bt.Initialize(ctx)
@@ -62,66 +62,50 @@ func runBacktestWithConfig(configName string, brokerConfig models.BrokerConfig) 
 		log.Printf("Failed to initialize backtester for %s: %v", configName, err)
 		return
 	}
-	
+
 	// 簡単な取引戦略
-	var trades []*models.Trade
-	tradeCount := 0
 	maxTrades := 5 // 最大取引数を制限
-	
-	for !bt.IsFinished() && tradeCount < maxTrades {
+	for i := 0; !bt.IsFinished() && len(bt.GetTradeHistory()) < maxTrades; i++ {
 		currentPrice := bt.GetCurrentPrice("USDJPY")
 		if currentPrice <= 0 {
 			bt.Forward()
 			continue
 		}
-		
+
 		positions := bt.GetPositions()
-		
+
 		// 5回に1回取引
-		if len(positions) == 0 && tradeCount < maxTrades {
+		if len(positions) == 0 {
 			// 残高に応じて取引サイズを調整
 			tradeSize := calculateTradeSize(bt.GetBalance(), brokerConfig.InitialBalance)
-			
+
 			err = bt.Buy("USDJPY", tradeSize)
-			if err == nil {
-				tradeCount++
-				
-				// 取引記録
-				trade := &models.Trade{
-					ID:         fmt.Sprintf("%s-trade-%d", configName, tradeCount),
-					Symbol:     "USDJPY",
-					Side:       models.Buy,
-					Size:       tradeSize,
-					EntryPrice: currentPrice,
-					ExitPrice:  currentPrice,
-					PnL:        0.0,
-					Status:     models.TradeOpen,
-					OpenTime:   bt.GetCurrentTime(),
-				}
-				trades = append(trades, trade)
-			}
 		}
-		
+
 		// 時間進行（間隔を空けて取引）
-		for i := 0; i < 10 && !bt.IsFinished(); i++ {
+		for j := 0; j < 10 && !bt.IsFinished(); j++ {
 			bt.Forward()
 		}
+		
+		// ポジションがあればクローズ
+		positionsToClose := bt.GetPositions()
+		for _, pos := range positionsToClose {
+			bt.ClosePosition(pos.ID)
+		}
 	}
-	
+
 	// 残りのポジションをクローズ
-	finalPositions := bt.GetPositions()
-	for _, pos := range finalPositions {
-		bt.ClosePosition(pos.ID)
-	}
-	
+	bt.CloseAllPositions()
+
 	// 結果表示
 	finalBalance := bt.GetBalance()
+	trades := bt.GetTradeHistory()
 	pnl := finalBalance - brokerConfig.InitialBalance
 	returnPct := (pnl / brokerConfig.InitialBalance) * 100
-	
+
 	fmt.Printf("設定: %s | 初期残高: %.0f円 | 最終残高: %.0f円 | 損益: %.0f円 | リターン: %.2f%% | 取引数: %d\n",
-		configName, brokerConfig.InitialBalance, finalBalance, pnl, returnPct, tradeCount)
-	
+		configName, brokerConfig.InitialBalance, finalBalance, pnl, returnPct, len(trades))
+
 	// 統計サマリー
 	if len(trades) > 0 {
 		report := statistics.NewReport(trades, brokerConfig.InitialBalance)

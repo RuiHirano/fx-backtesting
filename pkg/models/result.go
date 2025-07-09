@@ -1,6 +1,8 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
 // BacktestResult はバックテストの結果を表します。
 type BacktestResult struct {
@@ -78,7 +80,7 @@ func (br *BacktestResult) updateStatistics() {
 	var totalPnL, grossProfit, grossLoss float64
 	var winningTrades, losingTrades int
 	var largestWin, largestLoss float64
-	
+
 	for _, trade := range br.TradeHistory {
 		totalPnL += trade.PnL
 		

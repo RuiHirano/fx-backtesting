@@ -45,38 +45,35 @@ func (sma *SimpleMovingAverage) Value() float64 {
 func main() {
 	// 戦略的なバックテストの例（移動平均クロス戦略）
 	fmt.Println("=== 移動平均クロス戦略バックテスト ===")
-	
+
 	// データプロバイダー設定
 	dataConfig := models.DataProviderConfig{
 		FilePath: "../testdata/USDJPY_2024_01.csv", // 実際のデータファイルパス
 		Format:   "csv",
 	}
-	
+
 	// ブローカー設定
 	brokerConfig := models.BrokerConfig{
 		InitialBalance: 100000.0, // 初期残高: 10万円
 		Spread:         0.01,     // スプレッド: 1銭
 	}
-	
+
 	// Backtester作成
 	bt := backtester.NewBacktester(dataConfig, brokerConfig)
-	
+
 	// 初期化
 	ctx := context.Background()
 	err := bt.Initialize(ctx)
 	if err != nil {
 		log.Fatalf("Failed to initialize backtester: %v", err)
 	}
-	
+
 	// 移動平均の準備
 	shortMA := NewSMA(5)  // 5期間の短期移動平均
-	longMA := NewSMA(20)  // 20期間の長期移動平均
-	
-	var trades []*models.Trade
-	tradeCount := 0
-	
+	longMA := NewSMA(20) // 20期間の長期移動平均
+
 	fmt.Println("移動平均クロス戦略実行中...")
-	
+
 	for !bt.IsFinished() {
 		// 現在価格取得
 		currentPrice := bt.GetCurrentPrice("USDJPY")
@@ -84,58 +81,43 @@ func main() {
 			bt.Forward()
 			continue
 		}
-		
+
 		// 移動平均に価格を追加
 		shortMA.Add(currentPrice)
 		longMA.Add(currentPrice)
-		
+
 		// 移動平均値取得
 		shortValue := shortMA.Value()
 		longValue := longMA.Value()
-		
+
 		// 現在のポジション確認
 		positions := bt.GetPositions()
-		
+
 		// 戦略実行（移動平均クロス）
 		if shortValue > 0 && longValue > 0 {
 			if len(positions) == 0 && shortValue > longValue {
 				// ゴールデンクロス：買いエントリー
 				err = bt.Buy("USDJPY", 1000.0)
 				if err == nil {
-					tradeCount++
-					fmt.Printf("取引 %d: ゴールデンクロスで買いエントリー (価格: %.2f, 短期MA: %.2f, 長期MA: %.2f)\n",
-						tradeCount, currentPrice, shortValue, longValue)
-					
-					// 取引記録
-					trade := &models.Trade{
-						ID:         fmt.Sprintf("trade-%d", tradeCount),
-						Symbol:     "USDJPY",
-						Side:       models.Buy,
-						Size:       1000.0,
-						EntryPrice: currentPrice,
-						ExitPrice:  currentPrice,
-						PnL:        0.0,
-						Status:     models.TradeOpen,
-						OpenTime:   bt.GetCurrentTime(),
-					}
-					trades = append(trades, trade)
+					fmt.Printf("ゴールデンクロスで買いエントリー (価格: %.2f, 短期MA: %.2f, 長期MA: %.2f)\n",
+						currentPrice, shortValue, longValue)
 				}
 			} else if len(positions) > 0 && shortValue < longValue {
 				// デッドクロス：ポジションクローズ
 				for _, pos := range positions {
 					err = bt.ClosePosition(pos.ID)
 					if err == nil {
-						fmt.Printf("ポジション %s: デッドクロスでクローズ (価格: %.2f, 短期MA: %.2f, 長期MA: %.2f)\n",
-							pos.ID, currentPrice, shortValue, longValue)
+						fmt.Printf("デッドクロスでクローズ (価格: %.2f, 短期MA: %.2f, 長期MA: %.2f)\n",
+							currentPrice, shortValue, longValue)
 					}
 				}
 			}
 		}
-		
+
 		// 時間を進める
 		bt.Forward()
 	}
-	
+
 	// 残りのポジションをクローズ
 	finalPositions := bt.GetPositions()
 	for _, pos := range finalPositions {
@@ -144,10 +126,11 @@ func main() {
 			fmt.Printf("ポジション %s のクローズに失敗: %v\n", pos.ID, err)
 		}
 	}
-	
-	// 最終残高
+
+	// 最終残高と取引履歴を取得
 	finalBalance := bt.GetBalance()
-	
+	trades := bt.GetTradeHistory()
+
 	// 結果表示
 	fmt.Printf("\n=== バックテスト結果 ===\n")
 	fmt.Printf("戦略: 移動平均クロス (短期: %d期間, 長期: %d期間)\n", 5, 20)
@@ -155,13 +138,13 @@ func main() {
 	fmt.Printf("最終残高: %.2f円\n", finalBalance)
 	fmt.Printf("総損益: %.2f円\n", finalBalance-brokerConfig.InitialBalance)
 	fmt.Printf("リターン: %.2f%%\n", ((finalBalance-brokerConfig.InitialBalance)/brokerConfig.InitialBalance)*100)
-	fmt.Printf("実行した取引数: %d\n", tradeCount)
-	
+	fmt.Printf("実行した取引数: %d\n", len(trades))
+
 	// 詳細統計レポート生成
 	if len(trades) > 0 {
 		fmt.Printf("\n=== 詳細統計レポート ===\n")
 		report := statistics.NewReport(trades, brokerConfig.InitialBalance)
-		
+
 		// 基本統計
 		calculator := statistics.NewCalculator(trades)
 		fmt.Printf("勝率: %.2f%%\n", calculator.CalculateWinRate()*100)
@@ -170,10 +153,10 @@ func main() {
 		fmt.Printf("最大ドローダウン: %.2f円\n", calculator.CalculateMaxDrawdown())
 		fmt.Printf("プロフィットファクター: %.2f\n", calculator.CalculateProfitFactor())
 		fmt.Printf("シャープレシオ: %.4f\n", calculator.CalculateSharpeRatio())
-		
+
 		// 簡潔なサマリー
 		fmt.Printf("\n簡潔サマリー: %s\n", report.GenerateCompactSummary())
 	}
-	
+
 	fmt.Println("\n移動平均クロス戦略バックテスト完了!")
 }

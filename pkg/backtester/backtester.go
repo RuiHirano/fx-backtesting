@@ -180,3 +180,11 @@ func (bt *Backtester) CloseAllPositions() error {
 	
 	return nil
 }
+
+// GetTradeHistory は取引履歴を取得します。
+func (bt *Backtester) GetTradeHistory() []*models.Trade {
+	if !bt.initialized {
+		return []*models.Trade{}
+	}
+	return bt.broker.GetTradeHistory()
+}

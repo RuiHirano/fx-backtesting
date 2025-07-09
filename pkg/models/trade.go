@@ -44,10 +44,7 @@ type Trade struct {
 }
 
 // NewTradeFromPosition はポジションから取引履歴を作成します。
-func NewTradeFromPosition(position *Position, exitPrice float64) *Trade {
-	closeTime := time.Now()
-	pnl := calculateTradePnL(position.Side, position.Size, position.EntryPrice, exitPrice)
-	
+func NewTradeFromPosition(position *Position, exitPrice float64, pnl float64, closeTime time.Time) *Trade {
 	return &Trade{
 		ID:         position.ID,
 		Symbol:     position.Symbol,
