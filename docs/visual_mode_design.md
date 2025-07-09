@@ -40,7 +40,7 @@ graph TD
 
 #### 3.2.2 Web Frontend (React/TypeScript)
 
-`create-react-app`などでプロジェクトを初期化し、以下の主要コンポーネントを実装する。
+`Vite`などでプロジェクトを初期化し、以下の主要コンポーネントを実装する.
 
 - **WebSocket Client**: Go バックエンドとの WebSocket 接続を確立し、受信したデータを処理する。
 - **Chart Component**: `react-lightweight-charts`を使用して、受信したローソク足データを表示し、取引イベントをオーバーレイで描画する。
@@ -65,8 +65,8 @@ graph TD
 - **Frontend**: React, TypeScript
   - `react-lightweight-charts` (Charting Library)
   - `WebSocket API` (Browser built-in)
-  - State Management (e.g., React Context API or Redux for complex state)
-  - UI Framework (e.g., Material-UI, Bootstrap for basic components)
+  - State Management (Jotai)
+  - UI Framework (styled-components)
 
 ## 4. 実装計画
 
@@ -81,7 +81,7 @@ graph TD
     - `backtester.Backtester`に、現在のローソク足とダミーの取引イベントを WebSocket で送信する機能を追加。
     - フロントエンドからの簡単な Ping/Pong メッセージに応答するハンドラを実装。
 2.  **React Frontend**:
-    - 基本的な React プロジェクトのセットアップ (`create-react-app` with TypeScript)。
+    - 基本的な React プロジェクトのセットアップ (`Vite` with TypeScript)。
     - WebSocket クライアントの実装と Go バックエンドへの接続。
     - 受信したローソク足データをコンソールに表示する。
     - `react-lightweight-charts`を導入し、受信したローソク足データでチャートを初期表示。
