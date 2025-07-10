@@ -13,14 +13,6 @@ import (
 	"github.com/RuiHirano/fx-backtesting/pkg/visualizer"
 )
 
-// VisualizerNotifier はVisualizerへの通知インターフェース
-type VisualizerNotifier interface {
-	OnCandleUpdate(candle *models.Candle) error
-	OnTradeEvent(trade *models.Trade) error
-	OnStatisticsUpdate(stats *models.Statistics) error
-	OnBacktestStateChange(state BacktestState) error
-}
-
 // BacktestState はバックテストの状態を表す
 type BacktestState int
 
@@ -37,8 +29,7 @@ const (
 type Backtester struct {
 	market           market.Market
 	broker           broker.Broker
-	visualizer       VisualizerNotifier
-	visualizerImpl   visualizer.Visualizer
+	visualizer   visualizer.Visualizer
 	visualizerConfig models.VisualizerConfig
 	initialized      bool
 	statistics       *models.Statistics
@@ -63,50 +54,11 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 	return &Backtester{
 		market:           mkt,
 		broker:           bkr,
-		visualizer:       nil,
-		visualizerImpl:   nil,
+		visualizer:   nil,
 		visualizerConfig: visualizerConfig,
 		initialized:      false,
 		statistics:       models.NewStatistics(brokerConfig.InitialBalance),
 	}
-}
-
-// VisualizerAdapter はVisualizerとBacktesterの型を適合させるアダプター
-type VisualizerAdapter struct {
-	visualizer visualizer.Visualizer
-}
-
-// NewVisualizerAdapter は新しいVisualizerAdapterを作成
-func NewVisualizerAdapter(viz visualizer.Visualizer) *VisualizerAdapter {
-	return &VisualizerAdapter{visualizer: viz}
-}
-
-// OnCandleUpdate はローソク足データ更新を転送
-func (va *VisualizerAdapter) OnCandleUpdate(candle *models.Candle) error {
-	return va.visualizer.OnCandleUpdate(candle)
-}
-
-// OnTradeEvent は取引イベントを転送
-func (va *VisualizerAdapter) OnTradeEvent(trade *models.Trade) error {
-	return va.visualizer.OnTradeEvent(trade)
-}
-
-// OnStatisticsUpdate は統計情報更新を転送
-func (va *VisualizerAdapter) OnStatisticsUpdate(stats *models.Statistics) error {
-	return va.visualizer.OnStatisticsUpdate(stats)
-}
-
-// OnBacktestStateChange はバックテスト状態変更を転送（型変換）
-func (va *VisualizerAdapter) OnBacktestStateChange(state BacktestState) error {
-	// backtester.BacktestState を visualizer.BacktestState に変換
-	vizState := visualizer.BacktestState(state)
-	return va.visualizer.OnBacktestStateChange(vizState)
-}
-
-// SetVisualizer はVisualizerを設定します（非推奨：NewBacktesterWithVisualizerを使用してください）。
-func (bt *Backtester) SetVisualizer(visualizer VisualizerNotifier) error {
-	bt.visualizer = visualizer
-	return nil
 }
 
 // Initialize はBacktesterを初期化します。
@@ -133,7 +85,7 @@ func (bt *Backtester) Initialize(ctx context.Context) error {
 	
 	// Visualizerに状態変更を通知
 	if bt.visualizer != nil {
-		bt.visualizer.OnBacktestStateChange(BacktestStateRunning)
+		bt.visualizer.OnBacktestStateChange(visualizer.BacktestStateRunning)
 	}
 	
 	return nil
@@ -154,16 +106,12 @@ func (bt *Backtester) initializeVisualizer(ctx context.Context) error {
 	}
 	
 	// Visualizer作成
-	bt.visualizerImpl = visualizer.NewVisualizer(vizConfig)
+	bt.visualizer = visualizer.NewVisualizer(vizConfig)
 	
 	// Visualizer開始
-	if err := bt.visualizerImpl.Start(ctx, bt.visualizerConfig.Port); err != nil {
+	if err := bt.visualizer.Start(ctx, bt.visualizerConfig.Port); err != nil {
 		return fmt.Errorf("failed to start visualizer: %w", err)
 	}
-	
-	// アダプター作成と設定
-	adapter := NewVisualizerAdapter(bt.visualizerImpl)
-	bt.visualizer = adapter
 	
 	return nil
 }
@@ -171,15 +119,15 @@ func (bt *Backtester) initializeVisualizer(ctx context.Context) error {
 // Stop はBacktesterとVisualizerを停止します。
 func (bt *Backtester) Stop() error {
 	// Visualizerを停止
-	if bt.visualizerImpl != nil {
-		if err := bt.visualizerImpl.Stop(); err != nil {
+	if bt.visualizer != nil {
+		if err := bt.visualizer.Stop(); err != nil {
 			return fmt.Errorf("failed to stop visualizer: %w", err)
 		}
 	}
 	
 	// Visualizerに状態変更を通知
 	if bt.visualizer != nil {
-		bt.visualizer.OnBacktestStateChange(BacktestStateStopped)
+		bt.visualizer.OnBacktestStateChange(visualizer.BacktestStateStopped)
 	}
 	
 	bt.initialized = false
@@ -203,6 +151,7 @@ func (bt *Backtester) Forward() bool {
 		if bt.visualizer != nil {
 			// 現在のローソク足データを取得（とりあえずSAMPLEを固定）
 			candle := bt.market.GetCurrentCandle("SAMPLE")
+			fmt.Printf("Current Candle: %v\n", candle)
 			if candle != nil {
 				bt.visualizer.OnCandleUpdate(candle)
 			}

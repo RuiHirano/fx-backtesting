@@ -48,30 +48,33 @@ graph TD
 バックテストエンジンとフロントエンドの間の橋渡し役として新規実装する。
 
 - **責務**:
-  - バックテストエンジンからのデータを受信し、WebSocket経由でフロントエンドに転送する
+
+  - バックテストエンジンからのデータを受信し、WebSocket 経由でフロントエンドに転送する
   - フロントエンドからの制御コマンドを受信し、バックテストエンジンに転送する
-  - データフォーマットの変換（Go構造体 ↔ JSON）
-  - WebSocket接続の管理（接続、切断、再接続）
+  - データフォーマットの変換（Go 構造体 ↔ JSON）
+  - WebSocket 接続の管理（接続、切断、再接続）
   - 複数クライアントへの同時配信サポート
 
 - **主要機能**:
+
   - **WebSocket Server**: フロントエンドとの通信を管理
   - **Data Processor**: バックテストデータの変換・フィルタリング
   - **Command Handler**: フロントエンドからの制御コマンド処理
-  - **Connection Manager**: 複数のWebSocket接続を管理
+  - **Connection Manager**: 複数の WebSocket 接続を管理
   - **Event Broadcaster**: リアルタイムイベントの配信
 
 - **インターフェース**:
+
 ```go
 type Visualizer interface {
     // バックテストエンジンからのデータ受信
     OnCandleUpdate(candle *models.Candle)
     OnTradeEvent(trade *models.Trade)
     OnStatisticsUpdate(stats *models.Statistics)
-    
+
     // フロントエンドからの制御コマンド処理
     OnControlCommand(cmd *ControlCommand) error
-    
+
     // WebSocket管理
     Start(port int) error
     Stop() error
@@ -105,7 +108,7 @@ type Visualizer interface {
   - `net/http` (WebSocket サーバー)
   - `encoding/json`
 - **Frontend**: React, TypeScript
-  - `react-lightweight-charts` (Charting Library)
+  - `react-lightweight-charts` `lightweight-charts-react-components` (Charting Library)
   - `WebSocket API` (Browser built-in)
   - State Management (Jotai)
   - UI Framework (styled-components)
@@ -119,10 +122,10 @@ type Visualizer interface {
 このフェーズでは、Visualizer コンポーネントを実装し、基本的な通信インフラを構築します。各タスクは TDD に沿って進めます。
 
 1.  **Visualizer コンポーネント**:
-    - Visualizer インターフェースの実装とWebSocket サーバーのセットアップ。
+    - Visualizer インターフェースの実装と WebSocket サーバーのセットアップ。
     - バックテストエンジンからのデータ受信機能を実装。
     - フロントエンドからの簡単な Ping/Pong メッセージに応答するハンドラを実装。
-    - データフォーマット変換機能（Go構造体 → JSON）の実装。
+    - データフォーマット変換機能（Go 構造体 → JSON）の実装。
 2.  **Go Backend**:
     - `backtester.Backtester`に Visualizer への通知機能を追加。
     - 現在のローソク足とダミーの取引イベントを Visualizer に送信する機能を実装。
@@ -153,7 +156,7 @@ type Visualizer interface {
 このフェーズでは、バックテストの制御機能とリアルタイム統計情報の表示を実装します。各タスクは TDD に沿って進めます。
 
 1.  **Visualizer コンポーネント**:
-    - フロントエンドからの制御コマンドを受信し、バックテストエンジンに転送するCommand Handlerを実装。
+    - フロントエンドからの制御コマンドを受信し、バックテストエンジンに転送する Command Handler を実装。
     - 統計情報の集計とフォーマット機能を実装。
     - 制御コマンドのバリデーションとエラーハンドリング機能を追加。
 2.  **Go Backend**:

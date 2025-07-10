@@ -1,22 +1,26 @@
-import React, { useEffect, useRef, useState } from "react";
+import { atom, useAtom } from "jotai";
 import {
-  createChart,
-  type IChartApi,
+  type CandlestickData,
+  type ChartOptions,
   ColorType,
-  type ISeriesApi,
-  CandlestickSeries,
+  type DeepPartial,
   type Time,
 } from "lightweight-charts";
-import { atom, useAtom } from "jotai";
+import {
+  CandlestickSeries,
+  Chart,
+  LineSeries,
+  TimeScale,
+  TimeScaleFitContentTrigger,
+} from "lightweight-charts-react-components";
+import { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 
-interface CandleData {
-  time: Time;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
+const data = [
+  { time: "2023-01-01", value: 100 },
+  { time: "2023-01-02", value: 101 },
+  { time: "2023-01-03", value: 102 },
+];
 
 interface Trade {
   id: string;
@@ -41,14 +45,14 @@ interface ConnectionState {
 
 // Jotai atoms for state management
 const connectionStateAtom = atom<ConnectionState>({ isConnected: false });
-const candleDataAtom = atom<CandleData[]>([]);
+const candleDataAtom = atom<CandlestickData<Time>[]>([]);
 const tradesAtom = atom<Trade[]>([]);
 
 const ChartContainer = styled.div`
-  width: 100%;
-  height: 100vh;
-  position: relative;
-  background: #1e1e1e;
+  width: 800px;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
 `;
 
 const ConnectionStatus = styled.div<{ isConnected: boolean }>`
@@ -89,100 +93,9 @@ const StatusPanel = styled.div`
   min-width: 200px;
 `;
 
-// Chart component following TradingView tutorial pattern
-interface ChartProps {
-  data: CandleData[];
-}
-
-const Chart: React.FC<ChartProps> = ({ data }) => {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const [isChartReady, setIsChartReady] = useState(false);
-
-  // Initialize chart
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: "#1e1e1e" },
-        textColor: "#d1d4dc",
-      },
-      grid: {
-        vertLines: {
-          color: "#2a2a2a",
-        },
-        horzLines: {
-          color: "#2a2a2a",
-        },
-      },
-      timeScale: {
-        borderColor: "#485c7b",
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      rightPriceScale: {
-        borderColor: "#485c7b",
-      },
-      width: chartContainerRef.current.clientWidth,
-      height: chartContainerRef.current.clientHeight,
-    });
-
-    chartRef.current = chart;
-
-    const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#26a69a",
-      downColor: "#ef5350",
-      borderVisible: false,
-      wickUpColor: "#26a69a",
-      wickDownColor: "#ef5350",
-    });
-
-    candlestickSeriesRef.current = candlestickSeries;
-    setIsChartReady(true);
-
-    const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: chartContainerRef.current.clientHeight,
-        });
-      }
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-        candlestickSeriesRef.current = null;
-        setIsChartReady(false);
-      }
-    };
-  }, []);
-
-  // Update chart data
-  useEffect(() => {
-    if (!isChartReady || !candlestickSeriesRef.current || data.length === 0)
-      return;
-
-    try {
-      candlestickSeriesRef.current.setData(data);
-    } catch (error) {
-      console.error("Error updating chart data:", error);
-    }
-  }, [data, isChartReady]);
-
-  return (
-    <div ref={chartContainerRef} style={{ width: "100vw", height: "100vh" }} />
-  );
-};
-
 function App() {
   const ws = useRef<WebSocket | null>(null);
+
   const [connectionState, setConnectionState] = useAtom(connectionStateAtom);
   const [candleData, setCandleData] = useAtom(candleDataAtom);
   const [trades, setTrades] = useAtom(tradesAtom);
@@ -197,8 +110,6 @@ function App() {
         ws.current.onopen = () => {
           console.log("WebSocket connected successfully");
           setConnectionState({ isConnected: true });
-
-          // Send ping to test connection
           if (ws.current) {
             ws.current.send(
               JSON.stringify({ type: "ping", message: "Hello from React" })
@@ -215,12 +126,11 @@ function App() {
               case "candle_update":
                 if (message.data) {
                   const candle = message.data;
-                  // Convert timestamp to seconds for lightweight-charts
                   const timeInSeconds = Math.floor(
                     new Date(candle.timestamp || candle.time).getTime() / 1000
                   );
 
-                  const formattedCandle: CandleData = {
+                  const formattedCandle: CandlestickData<Time> = {
                     time: timeInSeconds as Time,
                     open: candle.open,
                     high: candle.high,
@@ -229,8 +139,9 @@ function App() {
                   };
 
                   setCandleData((prev) => {
-                    const newData = [...prev, formattedCandle];
-                    return newData.slice(-1000); // Keep last 1000 candles
+                    const updatedData = [...prev, formattedCandle];
+                    // Keep only the last 10000 candles
+                    return updatedData.slice(-10000);
                   });
                 }
                 break;
@@ -274,8 +185,6 @@ function App() {
         ws.current.onclose = (event) => {
           console.log("WebSocket disconnected:", event);
           setConnectionState({ isConnected: false });
-
-          // Auto-reconnect after 3 seconds
           setTimeout(() => {
             if (ws.current?.readyState === WebSocket.CLOSED) {
               console.log("Attempting to reconnect...");
@@ -301,31 +210,45 @@ function App() {
         ws.current.close();
       }
     };
-  }, [setConnectionState, setCandleData, setTrades]);
+  }, [setConnectionState, setTrades]);
+
+  const options: DeepPartial<ChartOptions> = {
+    layout: {
+      background: {
+        type: ColorType.Solid,
+        color: "white",
+      },
+      textColor: "black",
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: {
+        color: "rgba(197, 203, 206, 0.5)",
+      },
+      horzLines: {
+        color: "rgba(197, 203, 206, 0.5)",
+      },
+    },
+    rightPriceScale: {
+      borderColor: "rgba(197, 203, 206, 0.8)",
+      scaleMargins: {
+        top: 0.1,
+        bottom: 0.1,
+      },
+    },
+    timeScale: {
+      borderColor: "rgba(197, 203, 206, 0.8)",
+      barSpacing: 4,
+      visible: true,
+      timeVisible: true,
+    },
+  };
 
   return (
     <ChartContainer>
-      <ConnectionStatus isConnected={connectionState.isConnected}>
-        {connectionState.isConnected ? "Connected" : "Disconnected"}
-      </ConnectionStatus>
-
-      {connectionState.error && (
-        <ErrorMessage>Error: {connectionState.error}</ErrorMessage>
-      )}
-
-      <StatusPanel>
-        <div>Candles: {candleData.length}</div>
-        <div>Trades: {trades.length}</div>
-        {statistics && (
-          <>
-            <div>Balance: ${statistics.current_balance?.toFixed(2) || 0}</div>
-            <div>Total Trades: {statistics.total_trades || 0}</div>
-            <div>Win Rate: {statistics.win_rate?.toFixed(1) || 0}%</div>
-          </>
-        )}
-      </StatusPanel>
-
-      <Chart data={candleData} />
+      <Chart options={options} containerProps={{ style: { flexGrow: "1" } }}>
+        <CandlestickSeries data={candleData} />
+      </Chart>
     </ChartContainer>
   );
 }

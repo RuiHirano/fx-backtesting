@@ -25,13 +25,9 @@ func TestDataProvider_StreamData(t *testing.T) {
 	}
 	
 	// 最初のローソク足を取得
-	candleData, ok := <-candleChan
+	_, ok := <-candleChan
 	if !ok {
 		t.Fatal("Expected to receive candle from channel")
-	}
-	
-	if candleData.Symbol != "EURUSD" {
-		t.Errorf("Expected symbol EURUSD, got %s", candleData.Symbol)
 	}
 	
 	// チャネルクローズまで読み取り
@@ -106,9 +102,9 @@ func TestCSVParser_ParseError(t *testing.T) {
 	}
 	
 	// チャネルからの読み取りでエラーが発生することを確認
-	for candleData := range candleChan {
+	for candle := range candleChan {
 		// 無効なデータでもCandleが作成される場合はバリデーションでチェック
-		if err := candleData.Candle.Validate(); err == nil {
+		if err := candle.Validate(); err == nil {
 			t.Error("Expected validation error for invalid candle data")
 		}
 		break // 最初のエントリのみテスト

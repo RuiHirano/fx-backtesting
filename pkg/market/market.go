@@ -21,9 +21,9 @@ type Market interface {
 // MarketImpl はMarketインターフェースの実装です。
 type MarketImpl struct {
 	provider      data.DataProvider
-	currentData   map[string]*models.Candle
+	currentData   []*models.Candle
 	currentTime   time.Time
-	candleChannel <-chan data.CandleData
+	candleChannel <-chan models.Candle
 	finished      bool
 	initialized   bool
 }
@@ -32,7 +32,7 @@ type MarketImpl struct {
 func NewMarket(provider data.DataProvider) Market {
 	return &MarketImpl{
 		provider:    provider,
-		currentData: make(map[string]*models.Candle),
+		currentData: []*models.Candle{},
 		finished:    false,
 		initialized: false,
 	}
@@ -49,9 +49,9 @@ func (m *MarketImpl) Initialize(ctx context.Context) error {
 	m.candleChannel = candleChannel
 	
 	// 最初のデータを読み込み
-	if candleData, ok := <-m.candleChannel; ok {
-		m.currentData[candleData.Symbol] = candleData.Candle
-		m.currentTime = candleData.Candle.Timestamp
+	if candle, ok := <-m.candleChannel; ok {
+		m.currentData = append(m.currentData, &candle)
+		m.currentTime = candle.Timestamp
 	}
 	
 	m.initialized = true
@@ -65,9 +65,9 @@ func (m *MarketImpl) Forward() bool {
 	}
 	
 	// 次のデータを読み込み
-	if candleData, ok := <-m.candleChannel; ok {
-		m.currentData[candleData.Symbol] = candleData.Candle
-		m.currentTime = candleData.Candle.Timestamp
+	if candle, ok := <-m.candleChannel; ok {
+		m.currentData = append(m.currentData, &candle)
+		m.currentTime = candle.Timestamp
 		return true
 	}
 	
@@ -78,8 +78,9 @@ func (m *MarketImpl) Forward() bool {
 
 // GetCurrentPrice は現在の価格を取得します。
 func (m *MarketImpl) GetCurrentPrice(symbol string) float64 {
-	if candle, exists := m.currentData[symbol]; exists {
-		return candle.Close
+	if len(m.currentData) > 0 {
+		// 現在のローソク足の終値を返す
+		return m.currentData[len(m.currentData)-1].Close
 	}
 	return 0.0
 }
@@ -91,8 +92,9 @@ func (m *MarketImpl) GetCurrentTime() time.Time {
 
 // GetCurrentCandle は現在のローソク足を取得します。
 func (m *MarketImpl) GetCurrentCandle(symbol string) *models.Candle {
-	if candle, exists := m.currentData[symbol]; exists {
-		return candle
+	if len(m.currentData) > 0 {
+		// 現在のローソク足を返す
+		return m.currentData[len(m.currentData)-1]
 	}
 	return nil
 }

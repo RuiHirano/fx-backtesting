@@ -11,15 +11,9 @@ import (
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
-// CandleData はシンボル付きローソク足データを表します。
-type CandleData struct {
-	Symbol string
-	Candle *models.Candle
-}
-
 // DataProvider はデータ提供者のインターフェースです。
 type DataProvider interface {
-	StreamData(ctx context.Context) (<-chan CandleData, error)
+	StreamData(ctx context.Context) (<-chan models.Candle, error)
 }
 
 // CSVProvider はCSVファイルからデータを提供します。
@@ -35,7 +29,7 @@ func NewCSVProvider(config models.DataProviderConfig) *CSVProvider {
 }
 
 // StreamData はローソク足データをストリーミングします。
-func (p *CSVProvider) StreamData(ctx context.Context) (<-chan CandleData, error) {
+func (p *CSVProvider) StreamData(ctx context.Context) (<-chan models.Candle, error) {
 	// ファイルの存在確認
 	if _, err := os.Stat(p.Config.FilePath); os.IsNotExist(err) {
 		return nil, errors.New("file not found: " + p.Config.FilePath)
@@ -47,10 +41,7 @@ func (p *CSVProvider) StreamData(ctx context.Context) (<-chan CandleData, error)
 		return nil, err
 	}
 	
-	// ファイル名からシンボルを推測
-	symbol := p.extractSymbolFromFilename(p.Config.FilePath)
-	
-	candleChan := make(chan CandleData, 10)
+	candleChan := make(chan models.Candle, 10)
 	
 	go func() {
 		defer close(candleChan)
@@ -75,13 +66,8 @@ func (p *CSVProvider) StreamData(ctx context.Context) (<-chan CandleData, error)
 				continue
 			}
 			
-			candleData := CandleData{
-				Symbol: symbol,
-				Candle: candle,
-			}
-			
 			select {
-			case candleChan <- candleData:
+			case candleChan <- *candle:
 			case <-ctx.Done():
 				return
 			}
