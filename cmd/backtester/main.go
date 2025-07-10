@@ -22,6 +22,7 @@ type CLIConfig struct {
 	OutputFile string
 	Format     string
 	ShowHelp   bool
+	WsPort     int
 }
 
 // BacktestConfig はバックテスト設定を表します。
@@ -42,8 +43,15 @@ func main() {
 		fmt.Print(getHelpMessage())
 		os.Exit(0)
 	}
+
+	var hub *Hub
+	if config.WsPort > 0 {
+		hub = NewHub()
+		go hub.Run()
+		go StartWebSocketServer(config.WsPort, hub)
+	}
 	
-	err = runBacktest(config)
+	err = runBacktest(config, hub)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -64,6 +72,7 @@ func parseArgs(args []string) (*CLIConfig, error) {
 	fs.StringVar(&config.OutputFile, "output", "", "Output file path (optional, default: stdout)")
 	fs.StringVar(&config.Format, "format", "text", "Output format (text/json/csv)")
 	fs.BoolVar(&config.ShowHelp, "help", false, "Show help message")
+	fs.IntVar(&config.WsPort, "ws-port", 0, "WebSocket server port (0 to disable visual mode)")
 	
 	// 引数解析
 	err := fs.Parse(args[1:])
@@ -94,12 +103,12 @@ func parseArgs(args []string) (*CLIConfig, error) {
 }
 
 // runBacktest はバックテストを実行します。
-func runBacktest(config *CLIConfig) error {
-	return runBacktestWithOutput(config, os.Stdout)
+func runBacktest(config *CLIConfig, hub *Hub) error {
+	return runBacktestWithOutput(config, os.Stdout, hub)
 }
 
 // runBacktestWithOutput は出力先を指定してバックテストを実行します。
-func runBacktestWithOutput(config *CLIConfig, stdout io.Writer) error {
+func runBacktestWithOutput(config *CLIConfig, stdout io.Writer, hub *Hub) error {
 	// 設定ファイル読み込み
 	backtestConfig, err := loadConfig(config.ConfigFile)
 	if err != nil {
@@ -155,6 +164,24 @@ func runBacktestWithOutput(config *CLIConfig, stdout io.Writer) error {
 		}
 		
 		bt.Forward()
+
+		if hub != nil {
+			currentCandle, err := bt.GetCurrentCandle()
+			if err == nil {
+				// Dummy data for now, will be replaced with actual trade events later
+				data := struct {
+					Type    string        `json:"type"`
+					Candle  models.Candle `json:"candle"`
+					Trades  []*models.Trade `json:"trades"`
+				}{
+					Type:    "candle_update",
+					Candle:  currentCandle,
+					Trades:  []*models.Trade{}, // No trades for now
+				}
+				jsonMessage, _ := json.Marshal(data)
+				hub.broadcast <- jsonMessage
+			}
+		}
 	}
 	
 	// 残りのポジションをクローズ
@@ -273,6 +300,7 @@ Options:
   -output   Output file path (default: stdout)
   -format   Output format: text, json, csv (default: text)
   -help     Show this help message
+  -ws-port  WebSocket server port (0 to disable visual mode)
 
 Examples:
   # Basic usage

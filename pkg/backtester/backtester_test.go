@@ -7,6 +7,239 @@ import (
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
 
+// MockVisualizer はテスト用のモックVisualizer
+type MockVisualizer struct {
+	candleUpdates    []*models.Candle
+	tradeEvents      []*models.Trade
+	statisticsUpdates []*models.Statistics
+	stateChanges     []VisualizerBacktestState
+}
+
+// VisualizerBacktestState はVisualizer用のバックテスト状態
+type VisualizerBacktestState int
+
+const (
+	VisualizerStateIdle VisualizerBacktestState = iota
+	VisualizerStateRunning
+	VisualizerStatePaused
+	VisualizerStateStopped
+	VisualizerStateCompleted
+	VisualizerStateError
+)
+
+func NewMockVisualizer() *MockVisualizer {
+	return &MockVisualizer{
+		candleUpdates:     []*models.Candle{},
+		tradeEvents:       []*models.Trade{},
+		statisticsUpdates: []*models.Statistics{},
+		stateChanges:      []VisualizerBacktestState{},
+	}
+}
+
+func (m *MockVisualizer) OnCandleUpdate(candle *models.Candle) error {
+	m.candleUpdates = append(m.candleUpdates, candle)
+	return nil
+}
+
+func (m *MockVisualizer) OnTradeEvent(trade *models.Trade) error {
+	m.tradeEvents = append(m.tradeEvents, trade)
+	return nil
+}
+
+func (m *MockVisualizer) OnStatisticsUpdate(stats *models.Statistics) error {
+	m.statisticsUpdates = append(m.statisticsUpdates, stats)
+	return nil
+}
+
+func (m *MockVisualizer) OnBacktestStateChange(state BacktestState) error {
+	m.stateChanges = append(m.stateChanges, VisualizerBacktestState(state))
+	return nil
+}
+
+func (m *MockVisualizer) GetCandleUpdateCount() int {
+	return len(m.candleUpdates)
+}
+
+func (m *MockVisualizer) GetTradeEventCount() int {
+	return len(m.tradeEvents)
+}
+
+func (m *MockVisualizer) GetStatisticsUpdateCount() int {
+	return len(m.statisticsUpdates)
+}
+
+func (m *MockVisualizer) GetStateChangeCount() int {
+	return len(m.stateChanges)
+}
+
+func (m *MockVisualizer) GetLastCandle() *models.Candle {
+	if len(m.candleUpdates) == 0 {
+		return nil
+	}
+	return m.candleUpdates[len(m.candleUpdates)-1]
+}
+
+func (m *MockVisualizer) GetLastTrade() *models.Trade {
+	if len(m.tradeEvents) == 0 {
+		return nil
+	}
+	return m.tradeEvents[len(m.tradeEvents)-1]
+}
+
+func (m *MockVisualizer) GetLastStatistics() *models.Statistics {
+	if len(m.statisticsUpdates) == 0 {
+		return nil
+	}
+	return m.statisticsUpdates[len(m.statisticsUpdates)-1]
+}
+
+func (m *MockVisualizer) GetLastState() VisualizerBacktestState {
+	if len(m.stateChanges) == 0 {
+		return VisualizerStateIdle
+	}
+	return m.stateChanges[len(m.stateChanges)-1]
+}
+
+// TestBacktesterWithVisualizer はVisualizerを使ったBacktesterをテスト
+func TestBacktesterWithVisualizer(t *testing.T) {
+	t.Run("should set and notify visualizer", func(t *testing.T) {
+		// テスト設定
+		dataConfig := models.DataProviderConfig{
+			FilePath: "./testdata/sample.csv",
+			Format:   "csv",
+		}
+		
+		brokerConfig := models.BrokerConfig{
+			InitialBalance: 10000.0,
+			Spread:         0.0001,
+		}
+		
+		// Backtester作成
+		backtester := NewBacktester(dataConfig, brokerConfig)
+		
+		// MockVisualizer作成
+		mockVisualizer := NewMockVisualizer()
+		
+		// Visualizerを設定
+		err := backtester.SetVisualizer(mockVisualizer)
+		if err != nil {
+			t.Errorf("Expected no error when setting visualizer, got %v", err)
+		}
+		
+		// 初期化
+		ctx := context.Background()
+		err = backtester.Initialize(ctx)
+		if err != nil {
+			t.Errorf("Expected no error from Initialize, got %v", err)
+		}
+		
+		// 初期化時に状態変更通知があることを確認
+		if mockVisualizer.GetStateChangeCount() == 0 {
+			t.Error("Expected state change notification after initialization")
+		}
+		
+		// Forward実行時にローソク足データ通知があることを確認
+		hasNext := backtester.Forward()
+		if !hasNext {
+			t.Error("Expected Forward to return true")
+		}
+		
+		if mockVisualizer.GetCandleUpdateCount() == 0 {
+			t.Error("Expected candle update notification after Forward")
+		}
+		
+		// 最後のローソク足データを確認
+		lastCandle := mockVisualizer.GetLastCandle()
+		if lastCandle == nil {
+			t.Error("Expected last candle to be available")
+		}
+	})
+	
+	t.Run("should notify trade events", func(t *testing.T) {
+		// テスト設定
+		dataConfig := models.DataProviderConfig{
+			FilePath: "./testdata/sample.csv",
+			Format:   "csv",
+		}
+		
+		brokerConfig := models.BrokerConfig{
+			InitialBalance: 10000.0,
+			Spread:         0.0001,
+		}
+		
+		// Backtester作成と初期化
+		backtester := NewBacktester(dataConfig, brokerConfig)
+		mockVisualizer := NewMockVisualizer()
+		
+		backtester.SetVisualizer(mockVisualizer)
+		
+		ctx := context.Background()
+		err := backtester.Initialize(ctx)
+		if err != nil {
+			t.Errorf("Expected no error from Initialize, got %v", err)
+		}
+		
+		// Forward実行
+		backtester.Forward()
+		
+		// 取引実行（ファイル名からSAMPLEシンボルが推測される）
+		err = backtester.Buy("SAMPLE", 1000)
+		if err != nil {
+			t.Errorf("Expected no error from Buy, got %v", err)
+		}
+		
+		// トレードイベント通知があることを確認（ポジションオープン）
+		if mockVisualizer.GetTradeEventCount() == 0 {
+			t.Error("Expected trade event notification after Buy")
+		}
+		
+		// ポジション決済
+		positions := backtester.GetPositions()
+		if len(positions) > 0 {
+			err = backtester.ClosePosition(positions[0].ID)
+			if err != nil {
+				t.Errorf("Expected no error from ClosePosition, got %v", err)
+			}
+			
+			// 決済時にもトレードイベント通知があることを確認
+			if mockVisualizer.GetTradeEventCount() < 2 {
+				t.Error("Expected additional trade event notification after ClosePosition")
+			}
+		}
+	})
+	
+	t.Run("should work without visualizer", func(t *testing.T) {
+		// Visualizerなしでも正常動作することを確認
+		dataConfig := models.DataProviderConfig{
+			FilePath: "./testdata/sample.csv",
+			Format:   "csv",
+		}
+		
+		brokerConfig := models.BrokerConfig{
+			InitialBalance: 10000.0,
+			Spread:         0.0001,
+		}
+		
+		backtester := NewBacktester(dataConfig, brokerConfig)
+		
+		ctx := context.Background()
+		err := backtester.Initialize(ctx)
+		if err != nil {
+			t.Errorf("Expected no error from Initialize without visualizer, got %v", err)
+		}
+		
+		hasNext := backtester.Forward()
+		if !hasNext {
+			t.Error("Expected Forward to work without visualizer")
+		}
+		
+		err = backtester.Buy("SAMPLE", 1000)
+		if err != nil {
+			t.Errorf("Expected Buy to work without visualizer, got %v", err)
+		}
+	})
+}
+
 // Backtester NewBacktester テスト
 func TestBacktester_NewBacktester(t *testing.T) {
 	// Market・Broker設定
