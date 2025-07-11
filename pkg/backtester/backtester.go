@@ -129,6 +129,7 @@ func (bt *Backtester) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize market: %w", err)
 	}
 	
+	bt.ctx = ctx
 	bt.initialized = true
 	
 	// Visualizerに状態変更を通知
@@ -190,11 +191,6 @@ func (bt *Backtester) Stop() error {
 	
 	bt.initialized = false
 	return nil
-}
-
-// SetContext はバックテストのコンテキストを設定します
-func (bt *Backtester) SetContext(ctx context.Context) {
-	bt.ctx = ctx
 }
 
 // Forward は時間を次のステップに進めます。

@@ -148,9 +148,6 @@ func main() {
 	}
 	defer bt.Stop()
 	
-	// バックテスターにコンテキストを設定
-	bt.SetContext(ctx)
-	
 	fmt.Printf("✅ BacktesterとVisualizer（ポート %d）が初期化されました\n", 8080)
 	fmt.Println("🌐 フロントエンドを開始するには:")
 	fmt.Println("   1. cd ../../frontend/visual-mode")
