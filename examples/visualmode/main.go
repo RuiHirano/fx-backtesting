@@ -138,12 +138,18 @@ func main() {
 	fmt.Println("🤖 Backtester を初期化中...")
 	bt := backtester.NewBacktesterWithVisualizer(dataConfig, brokerConfig, visualizerConfig)
 	
+	// Graceful shutdown用のコンテキスト
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
 	// Backtester初期化（Visualizerも自動的に開始される）
-	ctx := context.Background()
 	if err := bt.Initialize(ctx); err != nil {
 		log.Fatalf("Backtester初期化エラー: %v", err)
 	}
 	defer bt.Stop()
+	
+	// バックテスターにコンテキストを設定
+	bt.SetContext(ctx)
 	
 	fmt.Printf("✅ BacktesterとVisualizer（ポート %d）が初期化されました\n", 8080)
 	fmt.Println("🌐 フロントエンドを開始するには:")
@@ -157,10 +163,6 @@ func main() {
 	fmt.Println("📈 シンプル移動平均戦略を開始します")
 	fmt.Println("戦略: 現在価格が10期移動平均より上で買い、下で売り")
 	fmt.Println()
-	
-	// Graceful shutdown用のコンテキスト
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	
 	// シグナル処理
 	sigCh := make(chan os.Signal, 1)

@@ -37,6 +37,8 @@ type Backtester struct {
 	// バックテスト制御関連
 	backtestController *BacktestController
 	controlMutex     sync.RWMutex
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // BacktestController はバックテストのコントロールを管理
@@ -66,6 +68,9 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 	// Broker作成  
 	bkr := broker.NewSimpleBroker(brokerConfig, mkt)
 	
+	// コンテキストを作成
+	ctx, cancel := context.WithCancel(context.Background())
+	
 	bt := &Backtester{
 		market:           mkt,
 		broker:           bkr,
@@ -73,6 +78,8 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 		visualizerConfig: visualizerConfig,
 		initialized:      false,
 		statistics:       models.NewStatistics(brokerConfig.InitialBalance),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 	
 	// BacktestControllerを作成
@@ -185,6 +192,11 @@ func (bt *Backtester) Stop() error {
 	return nil
 }
 
+// SetContext はバックテストのコンテキストを設定します
+func (bt *Backtester) SetContext(ctx context.Context) {
+	bt.ctx = ctx
+}
+
 // Forward は時間を次のステップに進めます。
 func (bt *Backtester) Forward() bool {
 	if !bt.initialized {
@@ -195,12 +207,19 @@ func (bt *Backtester) Forward() bool {
 	if bt.backtestController != nil {
 		// コントロールモードではコントローラーが再生状態の時のみ進む
 		for !bt.backtestController.IsRunning() {
-			// 一時停止中は実際に待機
-			time.Sleep(100 * time.Millisecond)
-			
-			// バックテストが完全に終了した場合のチェック
-			if bt.market.IsFinished() {
+			// コンテキストのキャンセルをチェック
+			select {
+			case <-bt.ctx.Done():
+				fmt.Println("Backtest interrupted by context cancellation")
 				return false
+			default:
+				// 一時停止中は実際に待機
+				time.Sleep(100 * time.Millisecond)
+				
+				// バックテストが完全に終了した場合のチェック
+				if bt.market.IsFinished() {
+					return false
+				}
 			}
 		}
 		
@@ -211,7 +230,14 @@ func (bt *Backtester) Forward() bool {
 		
 		if speed > 0 {
 			waitTime := time.Duration(float64(time.Millisecond*50) / speed)
-			time.Sleep(waitTime)
+			// 速度制御の待機中もコンテキストをチェック
+			select {
+			case <-bt.ctx.Done():
+				fmt.Println("Backtest interrupted during speed control")
+				return false
+			case <-time.After(waitTime):
+				// 速度制御の待機終了
+			}
 		}
 	}
 	
@@ -548,4 +574,11 @@ func (bc *BacktestController) controlLoop() {
 // Stop はBacktestControllerを停止
 func (bc *BacktestController) Stop() {
 	bc.cancel()
+}
+
+// Cancel はバックテストをキャンセルします
+func (bt *Backtester) Cancel() {
+	if bt.cancel != nil {
+		bt.cancel()
+	}
 }
