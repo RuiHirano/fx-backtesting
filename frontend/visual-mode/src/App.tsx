@@ -6,21 +6,9 @@ import {
   type DeepPartial,
   type Time,
 } from "lightweight-charts";
-import {
-  CandlestickSeries,
-  Chart,
-  LineSeries,
-  TimeScale,
-  TimeScaleFitContentTrigger,
-} from "lightweight-charts-react-components";
+import { CandlestickSeries, Chart } from "lightweight-charts-react-components";
 import { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
-
-const data = [
-  { time: "2023-01-01", value: 100 },
-  { time: "2023-01-02", value: 101 },
-  { time: "2023-01-03", value: 102 },
-];
 
 interface Trade {
   id: string;
@@ -43,11 +31,46 @@ interface ConnectionState {
   error?: string;
 }
 
+// Timeframe definition
+interface Timeframe {
+  label: string;
+  value: string;
+}
+
+const TIMEFRAMES: Timeframe[] = [
+  { label: "1M", value: "1m" },
+  { label: "5M", value: "5m" },
+  { label: "15M", value: "15m" },
+  { label: "1H", value: "1h" },
+  { label: "4H", value: "4h" },
+  { label: "1D", value: "1d" },
+  { label: "1W", value: "1w" },
+];
+
 // Jotai atoms for state management
 const connectionStateAtom = atom<ConnectionState>({ isConnected: false });
-const candleDataAtom = atom<CandlestickData<Time>[]>([]);
+const timeframeAtom = atom<string>("1m");
+const candleDataByTimeframeAtom = atom<Record<string, CandlestickData<Time>[]>>({
+  "1m": [],
+  "5m": [],
+  "15m": [],
+  "1h": [],
+  "4h": [],
+  "1d": [],
+  "1w": [],
+});
 const tradesAtom = atom<Trade[]>([]);
-const playbackStateAtom = atom<{ isPlaying: boolean; speed: number }>({ isPlaying: false, speed: 1 });
+const playbackStateAtom = atom<{ isPlaying: boolean; speed: number }>({
+  isPlaying: false,
+  speed: 1,
+});
+
+// Derived atom for current candle data
+const currentCandleDataAtom = atom<CandlestickData<Time>[]>((get) => {
+  const timeframe = get(timeframeAtom);
+  const allData = get(candleDataByTimeframeAtom);
+  return allData[timeframe] || [];
+});
 
 const ChartContainer = styled.div`
   width: 800px;
@@ -107,7 +130,8 @@ const ControlPanel = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 300px;
+  min-width: 600px;
+  flex-wrap: wrap;
 `;
 
 const PlayPauseButton = styled.button`
@@ -119,11 +143,11 @@ const PlayPauseButton = styled.button`
   cursor: pointer;
   font-size: 14px;
   min-width: 80px;
-  
+
   &:hover {
     background: #45a049;
   }
-  
+
   &:disabled {
     background: #666;
     cursor: not-allowed;
@@ -136,7 +160,7 @@ const SpeedSlider = styled.input`
   border-radius: 2px;
   background: #ddd;
   outline: none;
-  
+
   &::-webkit-slider-thumb {
     appearance: none;
     width: 16px;
@@ -145,7 +169,7 @@ const SpeedSlider = styled.input`
     background: #4caf50;
     cursor: pointer;
   }
-  
+
   &::-moz-range-thumb {
     width: 16px;
     height: 16px;
@@ -162,11 +186,46 @@ const SpeedLabel = styled.span`
   min-width: 60px;
 `;
 
+const TimeframeSelectorContainer = styled.div`
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 16px;
+`;
+
+const TimeframeButton = styled.button<{ active: boolean }>`
+  padding: 6px 12px;
+  background: ${(props) => (props.active ? "#4caf50" : "#666")};
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 36px;
+
+  &:hover {
+    background: ${(props) => (props.active ? "#45a049" : "#777")};
+  }
+
+  &:disabled {
+    background: #444;
+    cursor: not-allowed;
+  }
+`;
+
+const TimeframeLabel = styled.span`
+  font-size: 12px;
+  color: #ccc;
+  margin-right: 8px;
+`;
+
 function App() {
   const ws = useRef<WebSocket | null>(null);
 
   const [connectionState, setConnectionState] = useAtom(connectionStateAtom);
-  const [candleData, setCandleData] = useAtom(candleDataAtom);
+  const [timeframe, setTimeframe] = useAtom(timeframeAtom);
+  const [candleDataByTimeframe, setCandleDataByTimeframe] = useAtom(candleDataByTimeframeAtom);
+  const [currentCandleData] = useAtom(currentCandleDataAtom);
   const [trades, setTrades] = useAtom(tradesAtom);
   const [playbackState, setPlaybackState] = useAtom(playbackStateAtom);
   const [statistics, setStatistics] = useState<any>(null);
@@ -208,10 +267,14 @@ function App() {
                     close: candle.close,
                   };
 
-                  setCandleData((prev) => {
-                    const updatedData = [...prev, formattedCandle];
+                  setCandleDataByTimeframe((prev) => {
+                    const currentTimeframeData = prev[timeframe] || [];
+                    const updatedData = [...currentTimeframeData, formattedCandle];
                     // Keep only the last 10000 candles
-                    return updatedData.slice(-10000);
+                    return {
+                      ...prev,
+                      [timeframe]: updatedData.slice(-10000),
+                    };
                   });
                 }
                 break;
@@ -280,20 +343,20 @@ function App() {
         ws.current.close();
       }
     };
-  }, [setConnectionState, setTrades]);
+  }, [setConnectionState, setTrades, setCandleDataByTimeframe, timeframe]);
 
   const handlePlayPause = () => {
     if (!connectionState.isConnected) return;
-    
+
     const newIsPlaying = !playbackState.isPlaying;
-    setPlaybackState(prev => ({ ...prev, isPlaying: newIsPlaying }));
-    
+    setPlaybackState((prev) => ({ ...prev, isPlaying: newIsPlaying }));
+
     if (ws.current) {
       const command = {
         type: newIsPlaying ? "play" : "pause",
         data: { speed: playbackState.speed },
         client_id: "react-client",
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
       ws.current.send(JSON.stringify(command));
     }
@@ -301,14 +364,14 @@ function App() {
 
   const handleSpeedChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const speed = parseFloat(event.target.value);
-    setPlaybackState(prev => ({ ...prev, speed }));
-    
+    setPlaybackState((prev) => ({ ...prev, speed }));
+
     if (ws.current && connectionState.isConnected) {
       const command = {
         type: "speed_change",
         data: { speed },
         client_id: "react-client",
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
       ws.current.send(JSON.stringify(command));
     }
@@ -318,6 +381,21 @@ function App() {
     if (speed < 1) return `${speed}x`;
     if (speed === 1) return "1x";
     return `${speed}x`;
+  };
+
+  const handleTimeframeChange = (newTimeframe: string) => {
+    setTimeframe(newTimeframe);
+    
+    // Future: Send WebSocket command to backend
+    // if (ws.current && connectionState.isConnected) {
+    //   const command = {
+    //     type: "timeframe_change",
+    //     data: { timeframe: newTimeframe },
+    //     client_id: "react-client",
+    //     timestamp: new Date().toISOString(),
+    //   };
+    //   ws.current.send(JSON.stringify(command));
+    // }
   };
 
   const options: DeepPartial<ChartOptions> = {
@@ -363,7 +441,8 @@ function App() {
       )}
 
       <StatusPanel>
-        <div>Candles: {candleData.length}</div>
+        <div>Timeframe: {timeframe.toUpperCase()}</div>
+        <div>Candles: {currentCandleData.length}</div>
         <div>Trades: {trades.length}</div>
         {statistics && (
           <>
@@ -374,17 +453,17 @@ function App() {
         )}
       </StatusPanel>
       <Chart options={options} containerProps={{ style: { flexGrow: "1" } }}>
-        <CandlestickSeries data={candleData} />
+        <CandlestickSeries data={currentCandleData} />
       </Chart>
-      
+
       <ControlPanel>
-        <PlayPauseButton 
+        <PlayPauseButton
           onClick={handlePlayPause}
           disabled={!connectionState.isConnected}
         >
           {playbackState.isPlaying ? "Pause" : "Play"}
         </PlayPauseButton>
-        
+
         <SpeedLabel>Speed:</SpeedLabel>
         <SpeedSlider
           type="range"
@@ -396,6 +475,20 @@ function App() {
           disabled={!connectionState.isConnected}
         />
         <SpeedLabel>{getSpeedLabel(playbackState.speed)}</SpeedLabel>
+        
+        <TimeframeSelectorContainer>
+          <TimeframeLabel>Timeframe:</TimeframeLabel>
+          {TIMEFRAMES.map((tf) => (
+            <TimeframeButton
+              key={tf.value}
+              active={timeframe === tf.value}
+              onClick={() => handleTimeframeChange(tf.value)}
+              disabled={!connectionState.isConnected}
+            >
+              {tf.label}
+            </TimeframeButton>
+          ))}
+        </TimeframeSelectorContainer>
       </ControlPanel>
     </ChartContainer>
   );
