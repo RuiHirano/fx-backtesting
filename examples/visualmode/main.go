@@ -119,24 +119,40 @@ func main() {
 	fmt.Println("🚀 FX Backtesting Visual Mode Example")
 	fmt.Println("======================================")
 	
-	// 設定
-	dataConfig := models.DataProviderConfig{
+	// データプロバイダー設定
+	dpConfig := models.DataProviderConfig{
 		FilePath: "../../testdata/USDJPY_2024_01.csv", // 実際のデータファイルパスに変更してください
 		Format:   "csv",
 	}
 	
-	brokerConfig := models.BrokerConfig{
+	// 市場に関する設定
+	marketConfig := backtester.MarketConfig{
+		DataProvider: dpConfig,
+	}
+
+	// ブローカーに関する設定
+	brokerConfig := backtester.BrokerConfig{
 		InitialBalance: 100000.0, // 初期残高 10万円
 		Spread:         0.0001,   // 0.1 pips
 	}
-	
+
 	// Visualizer設定
 	visualizerConfig := models.DefaultVisualizerConfig()
 	visualizerConfig.Port = 8080
+
+	// バックテスト全体の設定
+	config := backtester.Config{
+		Market:     marketConfig,
+		Broker:     brokerConfig,
+		Visualizer: visualizerConfig,
+	}
 	
 	// Backtester作成（Visualizer統合）
 	fmt.Println("🤖 Backtester を初期化中...")
-	bt := backtester.NewBacktesterWithVisualizer(dataConfig, brokerConfig, visualizerConfig)
+	bt, err := backtester.NewBacktester(config)
+	if err != nil {
+		log.Fatalf("Failed to create backtester: %v", err)
+	}
 	
 	// Graceful shutdown用のコンテキスト
 	ctx, cancel := context.WithCancel(context.Background())

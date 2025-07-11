@@ -15,23 +15,38 @@ func main() {
 	fmt.Println("=== 基本的なバックテスト例 ===")
 
 	// データプロバイダー設定
-	dataConfig := models.DataProviderConfig{
+	dpConfig := models.DataProviderConfig{
 		FilePath: "../testdata/USDJPY_2024_01.csv", // 実際のデータファイルパス
 		Format:   "csv",
 	}
 
-	// ブローカー設定
-	brokerConfig := models.BrokerConfig{
+	// 市場に関する設定
+	marketConfig := backtester.MarketConfig{
+		DataProvider: dpConfig,
+	}
+
+	// ブローカーに関する設定
+	brokerConfig := backtester.BrokerConfig{
 		InitialBalance: 100000.0, // 初期残高: 10万円
 		Spread:         0.01,     // スプレッド: 1銭
 	}
 
+	// バックテスト全体の設定
+	config := backtester.Config{
+		Market:     marketConfig,
+		Broker:     brokerConfig,
+		Visualizer: models.DisabledVisualizerConfig(),
+	}
+
 	// Backtester作成
-	bt := backtester.NewBacktester(dataConfig, brokerConfig)
+	bt, err := backtester.NewBacktester(config)
+	if err != nil {
+		log.Fatalf("Failed to create backtester: %v", err)
+	}
 
 	// 初期化
 	ctx := context.Background()
-	err := bt.Initialize(ctx)
+	err = bt.Initialize(ctx)
 	if err != nil {
 		log.Fatalf("Failed to initialize backtester: %v", err)
 	}
@@ -75,16 +90,16 @@ func main() {
 
 	// 結果表示
 	fmt.Printf("\n=== バックテスト結果 ===\n")
-	fmt.Printf("初期残高: %.2f円\n", brokerConfig.InitialBalance)
+	fmt.Printf("初期残高: %.2f円\n", config.Broker.InitialBalance)
 	fmt.Printf("最終残高: %.2f円\n", finalBalance)
-	fmt.Printf("総損益: %.2f円\n", finalBalance-brokerConfig.InitialBalance)
-	fmt.Printf("リターン: %.2f%%\n", ((finalBalance-brokerConfig.InitialBalance)/brokerConfig.InitialBalance)*100)
+	fmt.Printf("総損益: %.2f円\n", finalBalance-config.Broker.InitialBalance)
+	fmt.Printf("リターン: %.2f%%\n", ((finalBalance-config.Broker.InitialBalance)/config.Broker.InitialBalance)*100)
 	fmt.Printf("実行した取引数: %d\n", len(trades))
 
 	// 統計レポート生成（取引があった場合）
 	if len(trades) > 0 {
 		fmt.Printf("\n=== 統計レポート ===\n")
-		report := statistics.NewReport(trades, brokerConfig.InitialBalance)
+		report := statistics.NewReport(trades, config.Broker.InitialBalance)
 		fmt.Print(report.GenerateCompactSummary())
 	}
 

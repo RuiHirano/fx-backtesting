@@ -26,6 +26,24 @@ const (
 	BacktestStateError = models.BacktestStateError
 )
 
+// MarketConfig は市場に関する設定
+type MarketConfig struct {
+	DataProvider models.DataProviderConfig `json:"data_provider"`
+}
+
+// BrokerConfig はブローカーに関する設定
+type BrokerConfig struct {
+	InitialBalance float64 `json:"initial_balance"`
+	Spread         float64 `json:"spread"`
+}
+
+// Config はバックテスト全体の設定
+type Config struct {
+	Market     MarketConfig              `json:"market"`
+	Broker     BrokerConfig              `json:"broker"`
+	Visualizer models.VisualizerConfig   `json:"visualizer"`
+}
+
 // Backtester はバックテスト実行とユーザーAPIを提供する統括コンポーネントです。
 type Backtester struct {
 	market           market.Market
@@ -53,19 +71,23 @@ type BacktestController struct {
 }
 
 // NewBacktester は新しいBacktesterを作成します。
-func NewBacktester(dataConfig models.DataProviderConfig, brokerConfig models.BrokerConfig) *Backtester {
-	return NewBacktesterWithVisualizer(dataConfig, brokerConfig, models.DisabledVisualizerConfig())
-}
+func NewBacktester(config Config) (*Backtester, error) {
+	// 設定の検証
+	if err := validateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 
-// NewBacktesterWithVisualizer はVisualizerConfigを含む新しいBacktesterを作成します。
-func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerConfig models.BrokerConfig, visualizerConfig models.VisualizerConfig) *Backtester {
 	// DataProvider作成
-	provider := data.NewCSVProvider(dataConfig)
+	provider := data.NewCSVProvider(config.Market.DataProvider)
 	
 	// Market作成
 	mkt := market.NewMarket(provider)
 	
-	// Broker作成  
+	// Broker作成 (models.BrokerConfigに変換)
+	brokerConfig := models.BrokerConfig{
+		InitialBalance: config.Broker.InitialBalance,
+		Spread:         config.Broker.Spread,
+	}
 	bkr := broker.NewSimpleBroker(brokerConfig, mkt)
 	
 	// コンテキストを作成
@@ -74,17 +96,64 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 	bt := &Backtester{
 		market:           mkt,
 		broker:           bkr,
-		visualizer:   nil,
-		visualizerConfig: visualizerConfig,
+		visualizer:       nil,
+		visualizerConfig: config.Visualizer,
 		initialized:      false,
-		statistics:       models.NewStatistics(brokerConfig.InitialBalance),
+		statistics:       models.NewStatistics(config.Broker.InitialBalance),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
 	
 	// BacktestControllerを作成
-	if visualizerConfig.Enabled {
+	if config.Visualizer.Enabled {
 		bt.backtestController = NewBacktestController(bt)
+	}
+	
+	return bt, nil
+}
+
+// validateConfig は設定の妥当性を検証します
+func validateConfig(config Config) error {
+	// DataProvider設定の検証
+	if err := config.Market.DataProvider.Validate(); err != nil {
+		return fmt.Errorf("market data provider config is invalid: %w", err)
+	}
+	
+	// Broker設定の検証
+	if config.Broker.InitialBalance <= 0 {
+		return errors.New("broker initial balance must be positive")
+	}
+	if config.Broker.Spread < 0 {
+		return errors.New("broker spread must be non-negative")
+	}
+	
+	// Visualizer設定の検証
+	if err := config.Visualizer.Validate(); err != nil {
+		return fmt.Errorf("visualizer config is invalid: %w", err)
+	}
+	
+	return nil
+}
+
+// NewBacktesterWithVisualizer はVisualizerConfigを含む新しいBacktesterを作成します。
+// 廃止予定: NewBacktesterを使用してください
+func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerConfig models.BrokerConfig, visualizerConfig models.VisualizerConfig) *Backtester {
+	config := Config{
+		Market: MarketConfig{
+			DataProvider: dataConfig,
+		},
+		Broker: BrokerConfig{
+			InitialBalance: brokerConfig.InitialBalance,
+			Spread:         brokerConfig.Spread,
+		},
+		Visualizer: visualizerConfig,
+	}
+	
+	bt, err := NewBacktester(config)
+	if err != nil {
+		// 既存のコードとの互換性のため、エラーの場合はnilを返す
+		// 実際の運用では適切なエラーハンドリングを推奨
+		return nil
 	}
 	
 	return bt

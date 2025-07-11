@@ -30,7 +30,7 @@ type Backtester struct {
 
 #### 2. Market (内部コンポーネント)
 
-`Backtester`の内部で使用されるコンポーネント。市場情報の提供と管理を行う。内部でDataProviderを使用してデータソースからローソク足データを取得する。
+`Backtester`の内部で使用されるコンポーネント。市場情報の提供と管理を行う。内部で DataProvider を使用してデータソースからローソク足データを取得する。
 
 ```go
 // Marketは、市場情報を提供するインターフェースです。
@@ -53,11 +53,11 @@ type MarketImpl struct {
 
 #### 3. DataProvider (内部コンポーネント)
 
-`Market`の内部で使用されるコンポーネント。純粋なデータ読み込み責務を担当し、CSVファイルなどのデータソースからローソク足データをストリームとして供給する。
+`Market`の内部で使用されるコンポーネント。純粋なデータ読み込み責務を担当し、CSV ファイルなどのデータソースからローソク足データをストリームとして供給する。
 
 #### 4. Broker (内部コンポーネント)
 
-`Backtester`の内部で使用されるコンポーネント。注文の実行、ポジション管理、残高計算などを行う。Market情報を参照してスプレッド適用や現在価格での損益計算を実行する。
+`Backtester`の内部で使用されるコンポーネント。注文の実行、ポジション管理、残高計算などを行う。Market 情報を参照してスプレッド適用や現在価格での損益計算を実行する。
 
 ### データ構造
 
@@ -97,9 +97,9 @@ type BrokerConfig {
 2.  **Backtester 生成**: `NewBacktester(config)` を呼び出す。
     - `NewBacktester` 内部で `Market` を設定に基づき生成する。
     - `Market` 内部で `DataProvider` を生成し、`DataProvider.StreamData()` を呼び出してデータチャネルを取得・保持する。
-    - `Broker` を生成し、Market参照を設定してスプレッド適用や価格取得を可能にする。
+    - `Broker` を生成し、Market 参照を設定してスプレッド適用や価格取得を可能にする。
 3.  **バックテストループ**: ユーザーは `for bt.Forward()` ループを記述する。
-    - `bt.Forward()`: 内部で `market.Forward()` を呼び出し、Market経由で次のローソク足を取得する。データがなくなれば `false` を返す。
+    - `bt.Forward()`: 内部で `market.Forward()` を呼び出し、Market 経由で次のローソク足を取得する。データがなくなれば `false` を返す。
     - `bt.GetCurrentCandle()`: ループ内で `market.GetCurrentCandle()` 経由で現在のローソク足データを取得する。
     - `bt.Buy()` / `bt.Sell()`: ユーザーは取引ロジックに基づき、注文関数を呼び出す。
 4.  **結果取得**: ループ終了後、`bt.GetResult()` などで統計情報を取得する。
@@ -132,10 +132,17 @@ func main() {
         Spread:         0.0001, // 1 pip
     }
 
+    // バックテストに関する設定
+    backtestConfig := backtester.BacktestConfig{
+        StartTime: "2023-01-01T00:00:00Z",
+        EndTime:   "2023-01-31T23:59:59Z",
+    }
+
     // バックテスト全体の設定
     config := backtester.Config{
         Market: marketConfig,
         Broker: brokerConfig,
+        Backtest: backtestConfig,
     }
 
     // バックテスターの作成
@@ -197,17 +204,17 @@ sequenceDiagram
 
     User->>User: Config作成 (MarketConfig, BrokerConfig)
     User->>Backtester: NewBacktester(config)
-    
+
     Note over Backtester: 内部でMarketとBrokerを生成
     Backtester->>Market: NewMarket(config.Market)
     Market->>DataProvider: 設定に基づきCSVProviderを作成
     Backtester->>Broker: NewBroker(config.Broker, market)
-    
+
     Market->>DataProvider: StreamData()
     DataProvider->>DataProvider: CSVファイルを開く
     DataProvider->>DataProvider: Goroutineでデータストリーム開始
     DataProvider-->>Market: candleCh, errCh, nil
-    
+
     Note over Market: チャネルを内部で保持
     Market-->>Backtester: Marketインスタンス
     Backtester-->>User: Backtesterインスタンス
@@ -227,24 +234,24 @@ sequenceDiagram
         User->>Backtester: Forward()
         Backtester->>Market: Forward()
         Market->>Market: <-candleCh (次のローソク足を取得)
-        
+
         alt データあり
             Market->>Market: currentCandle更新
             Market-->>Backtester: true
             Backtester->>Broker: SetCurrentPrice(candle.Close)
             Backtester-->>User: true
-            
+
             User->>Backtester: GetCurrentCandle()
             Backtester->>Market: GetCurrentCandle()
             Market-->>Backtester: currentCandle
             Backtester-->>User: currentCandle
-            
+
             Note over User: 取引ロジック実行
             User->>Backtester: GetPositions()
             Backtester->>Broker: GetPositions()
             Broker-->>Backtester: positions
             Backtester-->>User: positions
-            
+
             opt 買いシグナル
                 User->>Backtester: Buy(size, stopLoss, takeProfit)
                 Backtester->>Broker: PlaceOrder(buyOrder)
@@ -255,7 +262,7 @@ sequenceDiagram
                 Broker-->>Backtester: position
                 Backtester-->>User: position
             end
-            
+
             opt 売りシグナル
                 User->>Backtester: Sell(size, stopLoss, takeProfit)
                 Backtester->>Broker: PlaceOrder(sellOrder)
@@ -266,7 +273,7 @@ sequenceDiagram
                 Broker-->>Backtester: position
                 Backtester-->>User: position
             end
-            
+
             opt ポジション決済
                 User->>Backtester: ClosePosition(positionID)
                 Backtester->>Broker: ClosePosition(positionID)
@@ -276,7 +283,7 @@ sequenceDiagram
                 Broker-->>Backtester: closedPosition
                 Backtester-->>User: closedPosition
             end
-            
+
         else データなし（チャネルクローズ）
             Market->>Market: isFinished = true
             Market-->>Backtester: false
@@ -298,16 +305,16 @@ sequenceDiagram
     User->>Backtester: GetResult()
     Backtester->>Broker: GetBalance()
     Broker-->>Backtester: currentBalance
-    
+
     Backtester->>Broker: GetTradeHistory()
     Broker-->>Backtester: tradeHistory
-    
+
     Backtester->>Statistics: Calculate(tradeHistory, initialBalance)
     Statistics->>Statistics: 統計計算（PnL、勝率、トレード数など）
     Statistics-->>Backtester: result
-    
+
     Backtester-->>User: result
-    
+
     User->>User: 結果表示
     Note over User: fmt.Printf("Total PnL: %.2f", result.TotalPnL)<br/>fmt.Printf("Win Rate: %.2f%%", result.WinRate)
 ```
