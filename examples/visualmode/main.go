@@ -144,6 +144,7 @@ func main() {
 	config := backtester.Config{
 		Market:     marketConfig,
 		Broker:     brokerConfig,
+		Backtest:   backtester.BacktestConfig{}, // 期間制限なし
 		Visualizer: visualizerConfig,
 	}
 	

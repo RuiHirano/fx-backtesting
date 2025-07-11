@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/backtester"
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
@@ -42,6 +43,13 @@ func main() {
 		Spread:         0.015,    // スプレッド: 1.5銭
 	})
 	
+	// パターン5: 期間限定設定
+	fmt.Println("\n--- パターン5: 期間限定設定 ---")
+	runBacktestWithDateRange("期間限定", backtester.BrokerConfig{
+		InitialBalance: 100000.0, // 初期残高: 10万円
+		Spread:         0.01,     // スプレッド: 1銭
+	})
+	
 	fmt.Println("\n=== 設定比較完了 ===")
 }
 
@@ -61,6 +69,7 @@ func runBacktestWithConfig(configName string, brokerConfig backtester.BrokerConf
 	config := backtester.Config{
 		Market:     marketConfig,
 		Broker:     brokerConfig,
+		Backtest:   backtester.BacktestConfig{}, // 期間制限なし
 		Visualizer: models.DisabledVisualizerConfig(),
 	}
 
@@ -140,6 +149,99 @@ func calculateTradeSize(currentBalance, initialBalance float64) float64 {
 	}
 	
 	return 1000.0 // 標準サイズ
+}
+
+func runBacktestWithDateRange(configName string, brokerConfig backtester.BrokerConfig) {
+	// データプロバイダー設定
+	dpConfig := models.DataProviderConfig{
+		FilePath: "../../testdata/USDJPY_2024_01.csv",
+		Format:   "csv",
+	}
+
+	// 市場に関する設定
+	marketConfig := backtester.MarketConfig{
+		DataProvider: dpConfig,
+	}
+
+	// 期間限定設定（2024年1月1日～1月15日）
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	endTime := time.Date(2024, 1, 15, 23, 59, 59, 0, time.UTC)
+
+	// バックテスト全体の設定
+	config := backtester.Config{
+		Market: marketConfig,
+		Broker: brokerConfig,
+		Backtest: backtester.BacktestConfig{
+			StartTime: &startTime,
+			EndTime:   &endTime,
+		},
+		Visualizer: models.DisabledVisualizerConfig(),
+	}
+
+	// Backtester作成
+	bt, err := backtester.NewBacktester(config)
+	if err != nil {
+		log.Printf("Failed to create backtester for %s: %v", configName, err)
+		return
+	}
+
+	// 初期化
+	ctx := context.Background()
+	err = bt.Initialize(ctx)
+	if err != nil {
+		log.Printf("Failed to initialize backtester for %s: %v", configName, err)
+		return
+	}
+
+	// 簡単な取引戦略
+	maxTrades := 3 // 最大取引数を制限
+	for i := 0; !bt.IsFinished() && len(bt.GetTradeHistory()) < maxTrades; i++ {
+		currentPrice := bt.GetCurrentPrice("USDJPY")
+		if currentPrice <= 0 {
+			bt.Forward()
+			continue
+		}
+
+		positions := bt.GetPositions()
+
+		// 5回に1回取引
+		if len(positions) == 0 {
+			// 残高に応じて取引サイズを調整
+			tradeSize := calculateTradeSize(bt.GetBalance(), config.Broker.InitialBalance)
+
+			err = bt.Buy("USDJPY", tradeSize)
+		}
+
+		// 時間進行（間隔を空けて取引）
+		for j := 0; j < 10 && !bt.IsFinished(); j++ {
+			bt.Forward()
+		}
+		
+		// ポジションがあればクローズ
+		positionsToClose := bt.GetPositions()
+		for _, pos := range positionsToClose {
+			bt.ClosePosition(pos.ID)
+		}
+	}
+
+	// 残りのポジションをクローズ
+	bt.CloseAllPositions()
+
+	// 結果表示
+	finalBalance := bt.GetBalance()
+	trades := bt.GetTradeHistory()
+	pnl := finalBalance - config.Broker.InitialBalance
+	returnPct := (pnl / config.Broker.InitialBalance) * 100
+
+	fmt.Printf("設定: %s | 期間: %s～%s | 初期残高: %.0f円 | 最終残高: %.0f円 | 損益: %.0f円 | リターン: %.2f%% | 取引数: %d\n",
+		configName, startTime.Format("2006-01-02"), endTime.Format("2006-01-02"), 
+		config.Broker.InitialBalance, finalBalance, pnl, returnPct, len(trades))
+
+	// 統計サマリー
+	if len(trades) > 0 {
+		report := statistics.NewReport(trades, config.Broker.InitialBalance)
+		fmt.Printf("統計: %s\n", report.GenerateCompactSummary())
+	}
 }
 
 // 設定例を生成する関数

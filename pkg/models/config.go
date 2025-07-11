@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"strings"
+	"time"
 )
 
 // Config はバックテスト全体の設定を管理します。
@@ -19,8 +20,10 @@ type MarketConfig struct {
 
 // DataProviderConfig はデータソースに関する設定です。
 type DataProviderConfig struct {
-	FilePath string `json:"file_path"`
-	Format   string `json:"format"`
+	FilePath  string     `json:"file_path"`
+	Format    string     `json:"format"`
+	StartTime *time.Time `json:"start_time,omitempty"`
+	EndTime   *time.Time `json:"end_time,omitempty"`
 }
 
 // BrokerConfig はブローカーに関する設定です。
@@ -79,6 +82,13 @@ func (dpc *DataProviderConfig) Validate() error {
 	
 	if dpc.Format != "csv" && dpc.Format != "json" {
 		return errors.New("format must be 'csv' or 'json'")
+	}
+	
+	// 開始時刻と終了時刻の整合性チェック
+	if dpc.StartTime != nil && dpc.EndTime != nil {
+		if dpc.StartTime.After(*dpc.EndTime) {
+			return errors.New("start time must be before end time")
+		}
 	}
 	
 	return nil

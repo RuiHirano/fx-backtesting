@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
 )
@@ -66,6 +67,11 @@ func (p *CSVProvider) StreamData(ctx context.Context) (<-chan models.Candle, err
 				continue
 			}
 			
+			// 期間フィルタリング
+			if !p.isWithinTimeRange(candle.Time) {
+				continue
+			}
+			
 			select {
 			case candleChan <- *candle:
 			case <-ctx.Done():
@@ -75,6 +81,21 @@ func (p *CSVProvider) StreamData(ctx context.Context) (<-chan models.Candle, err
 	}()
 	
 	return candleChan, nil
+}
+
+// isWithinTimeRange は指定された時刻が期間内かどうかを判定します
+func (p *CSVProvider) isWithinTimeRange(candleTime time.Time) bool {
+	// 開始時刻のチェック
+	if p.Config.StartTime != nil && candleTime.Before(*p.Config.StartTime) {
+		return false
+	}
+	
+	// 終了時刻のチェック
+	if p.Config.EndTime != nil && candleTime.After(*p.Config.EndTime) {
+		return false
+	}
+	
+	return true
 }
 
 // extractSymbolFromFilename はファイル名からシンボルを推測します。

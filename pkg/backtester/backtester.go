@@ -37,10 +37,18 @@ type BrokerConfig struct {
 	Spread         float64 `json:"spread"`
 }
 
+// BacktestConfig はバックテスト実行に関する設定
+type BacktestConfig struct {
+	StartTime *time.Time `json:"start_time,omitempty"`
+	EndTime   *time.Time `json:"end_time,omitempty"`
+	MaxSteps  *int       `json:"max_steps,omitempty"`
+}
+
 // Config はバックテスト全体の設定
 type Config struct {
 	Market     MarketConfig              `json:"market"`
 	Broker     BrokerConfig              `json:"broker"`
+	Backtest   BacktestConfig            `json:"backtest"`
 	Visualizer models.VisualizerConfig   `json:"visualizer"`
 }
 
@@ -77,8 +85,15 @@ func NewBacktester(config Config) (*Backtester, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	// DataProvider作成
-	provider := data.NewCSVProvider(config.Market.DataProvider)
+	// DataProvider作成（期間設定を適用）
+	dataProviderConfig := config.Market.DataProvider
+	if config.Backtest.StartTime != nil {
+		dataProviderConfig.StartTime = config.Backtest.StartTime
+	}
+	if config.Backtest.EndTime != nil {
+		dataProviderConfig.EndTime = config.Backtest.EndTime
+	}
+	provider := data.NewCSVProvider(dataProviderConfig)
 	
 	// Market作成
 	mkt := market.NewMarket(provider)
@@ -127,9 +142,31 @@ func validateConfig(config Config) error {
 		return errors.New("broker spread must be non-negative")
 	}
 	
+	// Backtest設定の検証
+	if err := validateBacktestConfig(config.Backtest); err != nil {
+		return fmt.Errorf("backtest config is invalid: %w", err)
+	}
+	
 	// Visualizer設定の検証
 	if err := config.Visualizer.Validate(); err != nil {
 		return fmt.Errorf("visualizer config is invalid: %w", err)
+	}
+	
+	return nil
+}
+
+// validateBacktestConfig はBacktestConfigの妥当性を検証します
+func validateBacktestConfig(config BacktestConfig) error {
+	// 開始時刻と終了時刻の整合性チェック
+	if config.StartTime != nil && config.EndTime != nil {
+		if config.StartTime.After(*config.EndTime) {
+			return errors.New("start time must be before end time")
+		}
+	}
+	
+	// MaxStepsの妥当性チェック
+	if config.MaxSteps != nil && *config.MaxSteps <= 0 {
+		return errors.New("max steps must be positive")
 	}
 	
 	return nil
@@ -146,6 +183,7 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 			InitialBalance: brokerConfig.InitialBalance,
 			Spread:         brokerConfig.Spread,
 		},
+		Backtest:   BacktestConfig{}, // 空のBacktestConfig
 		Visualizer: visualizerConfig,
 	}
 	
