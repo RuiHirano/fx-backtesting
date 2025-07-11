@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/broker"
@@ -14,15 +15,15 @@ import (
 )
 
 // BacktestState はバックテストの状態を表す
-type BacktestState int
+type BacktestState = models.BacktestState
 
 const (
-	BacktestStateIdle BacktestState = iota
-	BacktestStateRunning
-	BacktestStatePaused
-	BacktestStateStopped
-	BacktestStateCompleted
-	BacktestStateError
+	BacktestStateIdle = models.BacktestStateIdle
+	BacktestStateRunning = models.BacktestStateRunning
+	BacktestStatePaused = models.BacktestStatePaused
+	BacktestStateStopped = models.BacktestStateStopped
+	BacktestStateCompleted = models.BacktestStateCompleted
+	BacktestStateError = models.BacktestStateError
 )
 
 // Backtester はバックテスト実行とユーザーAPIを提供する統括コンポーネントです。
@@ -33,6 +34,20 @@ type Backtester struct {
 	visualizerConfig models.VisualizerConfig
 	initialized      bool
 	statistics       *models.Statistics
+	// バックテスト制御関連
+	backtestController *BacktestController
+	controlMutex     sync.RWMutex
+}
+
+// BacktestController はバックテストのコントロールを管理
+type BacktestController struct {
+	bt              *Backtester
+	speedCh         chan float64
+	playCh          chan bool
+	state           models.BacktestControlState
+	mutex           sync.RWMutex
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 // NewBacktester は新しいBacktesterを作成します。
@@ -51,7 +66,7 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 	// Broker作成  
 	bkr := broker.NewSimpleBroker(brokerConfig, mkt)
 	
-	return &Backtester{
+	bt := &Backtester{
 		market:           mkt,
 		broker:           bkr,
 		visualizer:   nil,
@@ -59,6 +74,32 @@ func NewBacktesterWithVisualizer(dataConfig models.DataProviderConfig, brokerCon
 		initialized:      false,
 		statistics:       models.NewStatistics(brokerConfig.InitialBalance),
 	}
+	
+	// BacktestControllerを作成
+	if visualizerConfig.Enabled {
+		bt.backtestController = NewBacktestController(bt)
+	}
+	
+	return bt
+}
+
+// NewBacktestController は新しいBacktestControllerを作成
+func NewBacktestController(bt *Backtester) *BacktestController {
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	controller := &BacktestController{
+		bt:      bt,
+		speedCh: make(chan float64, 1),
+		playCh:  make(chan bool, 1),
+		state:   models.BacktestControlState{IsPlaying: false, Speed: 1.0, State: models.BacktestStateIdle},
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+	
+	// コントロールループを開始
+	go controller.controlLoop()
+	
+	return controller
 }
 
 // Initialize はBacktesterを初期化します。
@@ -85,7 +126,7 @@ func (bt *Backtester) Initialize(ctx context.Context) error {
 	
 	// Visualizerに状態変更を通知
 	if bt.visualizer != nil {
-		bt.visualizer.OnBacktestStateChange(visualizer.BacktestStateRunning)
+		bt.visualizer.OnBacktestStateChange(models.BacktestStateRunning)
 	}
 	
 	return nil
@@ -108,6 +149,11 @@ func (bt *Backtester) initializeVisualizer(ctx context.Context) error {
 	// Visualizer作成
 	bt.visualizer = visualizer.NewVisualizer(vizConfig)
 	
+	// BacktestControllerをVisualizerに設定
+	if bt.backtestController != nil {
+		bt.visualizer.SetBacktestController(bt.backtestController)
+	}
+	
 	// Visualizer開始
 	if err := bt.visualizer.Start(ctx, bt.visualizerConfig.Port); err != nil {
 		return fmt.Errorf("failed to start visualizer: %w", err)
@@ -118,6 +164,11 @@ func (bt *Backtester) initializeVisualizer(ctx context.Context) error {
 
 // Stop はBacktesterとVisualizerを停止します。
 func (bt *Backtester) Stop() error {
+	// BacktestControllerを停止
+	if bt.backtestController != nil {
+		bt.backtestController.Stop()
+	}
+	
 	// Visualizerを停止
 	if bt.visualizer != nil {
 		if err := bt.visualizer.Stop(); err != nil {
@@ -127,7 +178,7 @@ func (bt *Backtester) Stop() error {
 	
 	// Visualizerに状態変更を通知
 	if bt.visualizer != nil {
-		bt.visualizer.OnBacktestStateChange(visualizer.BacktestStateStopped)
+		bt.visualizer.OnBacktestStateChange(models.BacktestStateStopped)
 	}
 	
 	bt.initialized = false
@@ -138,6 +189,30 @@ func (bt *Backtester) Stop() error {
 func (bt *Backtester) Forward() bool {
 	if !bt.initialized {
 		return false
+	}
+	
+	// コントロールモードが有効な場合のチェック
+	if bt.backtestController != nil {
+		// コントロールモードではコントローラーが再生状態の時のみ進む
+		for !bt.backtestController.IsRunning() {
+			// 一時停止中は実際に待機
+			time.Sleep(100 * time.Millisecond)
+			
+			// バックテストが完全に終了した場合のチェック
+			if bt.market.IsFinished() {
+				return false
+			}
+		}
+		
+		// 速度制御のための待機
+		bt.controlMutex.RLock()
+		speed := bt.backtestController.GetState().Speed
+		bt.controlMutex.RUnlock()
+		
+		if speed > 0 {
+			waitTime := time.Duration(float64(time.Millisecond*50) / speed)
+			time.Sleep(waitTime)
+		}
 	}
 	
 	// Market時間進行
@@ -370,4 +445,107 @@ func (bt *Backtester) GetTradeHistory() []*models.Trade {
 		return []*models.Trade{}
 	}
 	return bt.broker.GetTradeHistory()
+}
+
+// BacktestController のメソッド群
+
+// Play はバックテストを開始/再開
+func (bc *BacktestController) Play(speed float64) error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	
+	bc.state.IsPlaying = true
+	bc.state.Speed = speed
+	bc.state.State = models.BacktestStateRunning
+	
+	// 非ブロッキングで状態を送信
+	select {
+	case bc.playCh <- true:
+	default:
+	}
+	
+	select {
+	case bc.speedCh <- speed:
+	default:
+	}
+	
+	fmt.Printf("Backtest started with speed: %f\n", speed)
+	return nil
+}
+
+// Pause はバックテストを一時停止
+func (bc *BacktestController) Pause() error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	
+	bc.state.IsPlaying = false
+	bc.state.State = models.BacktestStatePaused
+	
+	// 非ブロッキングで状態を送信
+	select {
+	case bc.playCh <- false:
+	default:
+	}
+	
+	fmt.Printf("Backtest paused\n")
+	return nil
+}
+
+// SetSpeed はバックテストの速度を設定
+func (bc *BacktestController) SetSpeed(speed float64) error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	
+	bc.state.Speed = speed
+	
+	// 非ブロッキングで速度を送信
+	select {
+	case bc.speedCh <- speed:
+	default:
+	}
+	
+	fmt.Printf("Backtest speed changed to: %f\n", speed)
+	return nil
+}
+
+// GetState は現在の状態を取得
+func (bc *BacktestController) GetState() models.BacktestControlState {
+	bc.mutex.RLock()
+	defer bc.mutex.RUnlock()
+	return bc.state
+}
+
+// IsRunning はバックテストが実行中かを確認
+func (bc *BacktestController) IsRunning() bool {
+	bc.mutex.RLock()
+	defer bc.mutex.RUnlock()
+	return bc.state.IsPlaying
+}
+
+// controlLoop はコントロールループを実行
+func (bc *BacktestController) controlLoop() {
+	for {
+		select {
+		case <-bc.ctx.Done():
+			return
+		case isPlaying := <-bc.playCh:
+			bc.bt.controlMutex.Lock()
+			if isPlaying {
+				fmt.Printf("Backtest control: Play\n")
+			} else {
+				fmt.Printf("Backtest control: Pause\n")
+			}
+			bc.bt.controlMutex.Unlock()
+		case speed := <-bc.speedCh:
+			bc.bt.controlMutex.Lock()
+			bc.state.Speed = speed
+			bc.bt.controlMutex.Unlock()
+			fmt.Printf("Backtest control: Speed changed to %f\n", speed)
+		}
+	}
+}
+
+// Stop はBacktestControllerを停止
+func (bc *BacktestController) Stop() {
+	bc.cancel()
 }

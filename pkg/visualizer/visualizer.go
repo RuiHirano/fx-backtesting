@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
+	"github.com/gorilla/websocket"
 )
 
 // Visualizer は、バックテストエンジンとフロントエンド間の通信を管理するインターフェース
@@ -23,7 +23,7 @@ type Visualizer interface {
 	OnCandleUpdate(candle *models.Candle) error
 	OnTradeEvent(trade *models.Trade) error
 	OnStatisticsUpdate(stats *models.Statistics) error
-	OnBacktestStateChange(state BacktestState) error
+	OnBacktestStateChange(state models.BacktestState) error
 
 	// フロントエンドからのコマンド処理
 	OnControlCommand(cmd *ControlCommand) error
@@ -35,19 +35,11 @@ type Visualizer interface {
 	// 設定
 	SetConfig(config *Config) error
 	GetConfig() *Config
+
+	// バックテスト制御
+	SetBacktestController(controller models.BacktestController)
+	GetBacktestController() models.BacktestController
 }
-
-// BacktestState はバックテストの状態を表す
-type BacktestState int
-
-const (
-	BacktestStateIdle BacktestState = iota
-	BacktestStateRunning
-	BacktestStatePaused
-	BacktestStateStopped
-	BacktestStateCompleted
-	BacktestStateError
-)
 
 // ControlCommand はフロントエンドからの制御コマンドを表す
 type ControlCommand struct {
@@ -103,6 +95,7 @@ type visualizerImpl struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	hub          *Hub
+	backtestController models.BacktestController
 }
 
 // Client は WebSocket クライアントを表す
@@ -123,6 +116,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	mutex      sync.RWMutex
+	visualizer Visualizer
 }
 
 // NewVisualizer は新しい Visualizer インスタンスを作成
@@ -140,7 +134,7 @@ func NewVisualizer(config *Config) Visualizer {
 		unregister: make(chan *Client),
 	}
 
-	return &visualizerImpl{
+	vizImpl := &visualizerImpl{
 		config:   config,
 		clients:  make(map[string]*Client),
 		upgrader: websocket.Upgrader{
@@ -151,7 +145,13 @@ func NewVisualizer(config *Config) Visualizer {
 		ctx:    ctx,
 		cancel: cancel,
 		hub:    hub,
+		backtestController: nil, // 外部から設定される
 	}
+	
+	// Hubにvisualizerへの参照を設定
+	hub.visualizer = vizImpl
+	
+	return vizImpl
 }
 
 // Start は Visualizer を開始
@@ -265,7 +265,7 @@ func (v *visualizerImpl) OnStatisticsUpdate(stats *models.Statistics) error {
 }
 
 // OnBacktestStateChange はバックテストの状態変更を処理
-func (v *visualizerImpl) OnBacktestStateChange(state BacktestState) error {
+func (v *visualizerImpl) OnBacktestStateChange(state models.BacktestState) error {
 	message := Message{
 		Type:      "backtest_state",
 		Data:      state,
@@ -277,8 +277,72 @@ func (v *visualizerImpl) OnBacktestStateChange(state BacktestState) error {
 
 // OnControlCommand はフロントエンドからの制御コマンドを処理
 func (v *visualizerImpl) OnControlCommand(cmd *ControlCommand) error {
-	// TODO: 実際のコマンド処理ロジックを実装
-	fmt.Printf("Received control command: %s\n", cmd.Type)
+	fmt.Printf("Processing control command: %s from client %s\n", cmd.Type, cmd.ClientID)
+	
+	switch cmd.Type {
+	case "play":
+		return v.handlePlayCommand(cmd)
+	case "pause":
+		return v.handlePauseCommand(cmd)
+	case "speed_change":
+		return v.handleSpeedChangeCommand(cmd)
+	default:
+		return fmt.Errorf("unknown control command type: %s", cmd.Type)
+	}
+}
+
+// SetBacktestController はバックテストコントローラーを設定
+func (v *visualizerImpl) SetBacktestController(controller models.BacktestController) {
+	v.backtestController = controller
+}
+
+// GetBacktestController はバックテストコントローラーを取得
+func (v *visualizerImpl) GetBacktestController() models.BacktestController {
+	return v.backtestController
+}
+
+// handlePlayCommand はプレイコマンドを処理
+func (v *visualizerImpl) handlePlayCommand(cmd *ControlCommand) error {
+	fmt.Printf("Handling play command from %s\n", cmd.ClientID)
+	
+	speed := 1.0
+	if speedData, ok := cmd.Data["speed"].(float64); ok {
+		speed = speedData
+	}
+	
+	if v.backtestController != nil {
+		return v.backtestController.Play(speed)
+	}
+	
+	fmt.Printf("Backtest controller not set\n")
+	return nil
+}
+
+// handlePauseCommand は一時停止コマンドを処理
+func (v *visualizerImpl) handlePauseCommand(cmd *ControlCommand) error {
+	fmt.Printf("Handling pause command from %s\n", cmd.ClientID)
+	
+	if v.backtestController != nil {
+		return v.backtestController.Pause()
+	}
+	
+	fmt.Printf("Backtest controller not set\n")
+	return nil
+}
+
+// handleSpeedChangeCommand は速度変更コマンドを処理
+func (v *visualizerImpl) handleSpeedChangeCommand(cmd *ControlCommand) error {
+	fmt.Printf("Handling speed change command from %s\n", cmd.ClientID)
+	
+	if speedData, ok := cmd.Data["speed"].(float64); ok {
+		fmt.Printf("New speed: %f\n", speedData)
+		
+		if v.backtestController != nil {
+			return v.backtestController.SetSpeed(speedData)
+		}
+	}
+	
+	fmt.Printf("Backtest controller not set or invalid speed data\n")
 	return nil
 }
 
@@ -408,8 +472,73 @@ func (c *Client) readPump() {
 		c.lastActivity = time.Now()
 		c.mutex.Unlock()
 
-		// メッセージを処理（今後実装）
-		fmt.Printf("Received message from %s: %s\n", c.id, string(message))
+		// メッセージを処理
+		c.handleMessage(message)
+	}
+}
+
+// handleMessage はクライアントからのメッセージを処理
+func (c *Client) handleMessage(message []byte) {
+	var controlCmd ControlCommand
+	if err := json.Unmarshal(message, &controlCmd); err != nil {
+		fmt.Printf("Error parsing control command from %s: %v\n", c.id, err)
+		return
+	}
+
+	controlCmd.ClientID = c.id
+	controlCmd.Timestamp = time.Now()
+
+	fmt.Printf("Received control command from %s: %s\n", c.id, controlCmd.Type)
+
+	// コマンドを処理
+	switch controlCmd.Type {
+	case "ping":
+		// Pong を返す
+		response := Message{
+			Type:      "pong",
+			Data:      map[string]interface{}{"message": "pong"},
+			Timestamp: time.Now(),
+			ClientID:  c.id,
+		}
+		if data, err := json.Marshal(response); err == nil {
+			select {
+			case c.send <- data:
+			default:
+				fmt.Printf("Failed to send pong to %s\n", c.id)
+			}
+		}
+	case "play", "pause", "speed_change":
+		// バックテスト制御コマンドを処理
+		c.handleBacktestControl(&controlCmd)
+	default:
+		fmt.Printf("Unknown command type: %s\n", controlCmd.Type)
+	}
+}
+
+// handleBacktestControl はバックテスト制御コマンドを処理
+func (c *Client) handleBacktestControl(cmd *ControlCommand) {
+	// Visualizerを取得して、OnControlCommandを呼び出す
+	if visualizer, ok := c.hub.visualizer.(*visualizerImpl); ok {
+		if err := visualizer.OnControlCommand(cmd); err != nil {
+			fmt.Printf("Error handling control command: %v\n", err)
+		}
+	} else {
+		fmt.Printf("Unable to get visualizer instance\n")
+	}
+
+	// 確認メッセージを送信
+	response := Message{
+		Type:      "control_response",
+		Data:      map[string]interface{}{"command": cmd.Type, "status": "received"},
+		Timestamp: time.Now(),
+		ClientID:  c.id,
+	}
+	if data, err := json.Marshal(response); err == nil {
+		select {
+		case c.send <- data:
+		default:
+			fmt.Printf("Failed to send control response to %s\n", c.id)
+		}
 	}
 }
 
