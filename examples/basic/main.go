@@ -16,7 +16,7 @@ func main() {
 
 	// データプロバイダー設定
 	dpConfig := models.DataProviderConfig{
-		FilePath: "../testdata/USDJPY_2024_01.csv", // 実際のデータファイルパス
+		FilePath: "../../testdata/USDJPY_2024_01.csv", // 実際のデータファイルパス
 		Format:   "csv",
 	}
 

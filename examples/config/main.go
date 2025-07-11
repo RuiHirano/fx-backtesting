@@ -48,7 +48,7 @@ func main() {
 func runBacktestWithConfig(configName string, brokerConfig backtester.BrokerConfig) {
 	// データプロバイダー設定
 	dpConfig := models.DataProviderConfig{
-		FilePath: "../testdata/USDJPY_2024_01.csv",
+		FilePath: "../../testdata/USDJPY_2024_01.csv",
 		Format:   "csv",
 	}
 
