@@ -13,9 +13,9 @@ import (
 type Market interface {
 	Initialize(ctx context.Context) error
 	Forward() bool
-	GetCurrentPrice(symbol string) float64
+	GetCurrentPrice() float64
 	GetCurrentTime() time.Time
-	GetCurrentCandle(symbol string) *models.Candle
+	GetCurrentCandle() *models.Candle
 	GetPrevCandles(startTime time.Time, index int) []*models.Candle
 	IsFinished() bool
 }
@@ -110,7 +110,7 @@ func (m *MarketImpl) Forward() bool {
 }
 
 // GetCurrentPrice returns the closing price of the current candle.
-func (m *MarketImpl) GetCurrentPrice(symbol string) float64 {
+func (m *MarketImpl) GetCurrentPrice() float64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -132,7 +132,7 @@ func (m *MarketImpl) GetCurrentTime() time.Time {
 }
 
 // GetCurrentCandle returns the current candle.
-func (m *MarketImpl) GetCurrentCandle(symbol string) *models.Candle {
+func (m *MarketImpl) GetCurrentCandle() *models.Candle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

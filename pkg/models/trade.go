@@ -31,7 +31,6 @@ func (ts TradeStatus) String() string {
 // Trade は完了した取引を表します。
 type Trade struct {
 	ID         string        `json:"id"`
-	Symbol     string        `json:"symbol"`
 	Side       OrderSide     `json:"side"`
 	Size       float64       `json:"size"`
 	EntryPrice float64       `json:"entry_price"`
@@ -47,7 +46,6 @@ type Trade struct {
 func NewTradeFromPosition(position *Position, exitPrice float64, pnl float64, closeTime time.Time) *Trade {
 	return &Trade{
 		ID:         position.ID,
-		Symbol:     position.Symbol,
 		Side:       position.Side,
 		Size:       position.Size,
 		EntryPrice: position.EntryPrice,
@@ -100,7 +98,6 @@ func (t *Trade) GetDurationHours() float64 {
 func (t *Trade) ToCSVRecord() []string {
 	return []string{
 		t.ID,
-		t.Symbol,
 		t.Side.String(),
 		fmt.Sprintf("%.2f", t.Size),
 		fmt.Sprintf("%.5f", t.EntryPrice),

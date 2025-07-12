@@ -60,7 +60,7 @@ func main() {
 		if i%100 == 0 {
 			positions := bt.GetPositions()
 			if len(positions) == 0 {
-				currentPrice := bt.GetCurrentPrice("USDJPY")
+				currentPrice := bt.GetCurrentPrice()
 				err := bt.Buy("USDJPY", 1000.0) // 1000通貨単位で買い
 				if err == nil {
 					fmt.Printf("ステップ %d: 価格 %.2f で買い注文実行\n", i, currentPrice)

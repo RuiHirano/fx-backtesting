@@ -91,7 +91,7 @@ func runBacktestWithConfig(configName string, brokerConfig backtester.BrokerConf
 	// 簡単な取引戦略
 	maxTrades := 5 // 最大取引数を制限
 	for i := 0; !bt.IsFinished() && len(bt.GetTradeHistory()) < maxTrades; i++ {
-		currentPrice := bt.GetCurrentPrice("USDJPY")
+		currentPrice := bt.GetCurrentPrice()
 		if currentPrice <= 0 {
 			bt.Forward()
 			continue
@@ -196,7 +196,7 @@ func runBacktestWithDateRange(configName string, brokerConfig backtester.BrokerC
 	// 簡単な取引戦略
 	maxTrades := 3 // 最大取引数を制限
 	for i := 0; !bt.IsFinished() && len(bt.GetTradeHistory()) < maxTrades; i++ {
-		currentPrice := bt.GetCurrentPrice("USDJPY")
+		currentPrice := bt.GetCurrentPrice()
 		if currentPrice <= 0 {
 			bt.Forward()
 			continue

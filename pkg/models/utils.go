@@ -27,13 +27,13 @@ func ParseOrderSide(s string) (OrderSide, error) {
 func ParseOrderType(s string) (OrderType, error) {
 	switch strings.ToLower(s) {
 	case "market":
-		return Market, nil
+		return MarketOrder, nil
 	case "limit":
-		return Limit, nil
+		return LimitOrder, nil
 	case "stop":
-		return Stop, nil
+		return StopOrder, nil
 	default:
-		return Market, fmt.Errorf("invalid order type: %s", s)
+		return MarketOrder, fmt.Errorf("invalid order type: %s", s)
 	}
 }
 

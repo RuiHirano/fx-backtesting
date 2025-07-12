@@ -345,8 +345,7 @@ func (bt *Backtester) Forward() bool {
 		
 		// Visualizerにローソク足データを通知
 		if bt.visualizer != nil {
-			// 現在のローソク足データを取得（とりあえずSAMPLEを固定）
-			candle := bt.market.GetCurrentCandle("SAMPLE")
+			candle := bt.market.GetCurrentCandle()
 			fmt.Printf("Current Candle: %v\n", candle)
 			if candle != nil {
 				bt.visualizer.OnCandleUpdate(candle)
@@ -378,11 +377,11 @@ func (bt *Backtester) GetCurrentTime() time.Time {
 }
 
 // GetCurrentPrice は指定シンボルの現在価格を取得します。
-func (bt *Backtester) GetCurrentPrice(symbol string) float64 {
+func (bt *Backtester) GetCurrentPrice() float64 {
 	if !bt.initialized {
 		return 0.0
 	}
-	return bt.market.GetCurrentPrice(symbol)
+	return bt.market.GetCurrentPrice()
 }
 
 // Buy は買い注文を実行します。
@@ -397,7 +396,7 @@ func (bt *Backtester) Buy(symbol string, size float64) error {
 	}
 	
 	// 現在価格確認（存在しないシンボルチェック）
-	price := bt.market.GetCurrentPrice(symbol)
+	price := bt.market.GetCurrentPrice()
 	if price <= 0 {
 		return fmt.Errorf("invalid symbol or price: %s", symbol)
 	}
@@ -417,7 +416,6 @@ func (bt *Backtester) Buy(symbol string, size float64) error {
 		// ダミーのトレードイベントを作成
 		trade := &models.Trade{
 			ID:         orderID,
-			Symbol:     symbol,
 			Side:       models.Buy,
 			Size:       size,
 			EntryPrice: price,
@@ -448,7 +446,7 @@ func (bt *Backtester) Sell(symbol string, size float64) error {
 	}
 	
 	// 現在価格確認（存在しないシンボルチェック）
-	price := bt.market.GetCurrentPrice(symbol)
+	price := bt.market.GetCurrentPrice()
 	if price <= 0 {
 		return fmt.Errorf("invalid symbol or price: %s", symbol)
 	}
@@ -468,7 +466,6 @@ func (bt *Backtester) Sell(symbol string, size float64) error {
 		// ダミーのトレードイベントを作成
 		trade := &models.Trade{
 			ID:         orderID,
-			Symbol:     symbol,
 			Side:       models.Sell,
 			Size:       size,
 			EntryPrice: price,

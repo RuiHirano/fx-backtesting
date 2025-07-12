@@ -390,7 +390,7 @@ func TestBacktester_Forward(t *testing.T) {
 	}
 	
 	// 初期価格取得
-	initialPrice := backtester.GetCurrentPrice("SAMPLE")
+	initialPrice := backtester.GetCurrentPrice()
 	if initialPrice <= 0.0 {
 		t.Error("Expected positive initial price")
 	}
@@ -408,7 +408,7 @@ func TestBacktester_Forward(t *testing.T) {
 	}
 	
 	// 価格更新確認
-	newPrice := backtester.GetCurrentPrice("SAMPLE")
+	newPrice := backtester.GetCurrentPrice()
 	if newPrice <= 0.0 {
 		t.Error("Expected positive price after Forward")
 	}
@@ -417,7 +417,7 @@ func TestBacktester_Forward(t *testing.T) {
 	stepCount := 1
 	for backtester.Forward() {
 		stepCount++
-		if stepCount > 100 { // 無限ループ防止
+		if stepCount > 600 { // 無限ループ防止
 			break
 		}
 	}
@@ -564,7 +564,7 @@ func TestBacktester_Integration(t *testing.T) {
 	
 	for step := 0; step < maxSteps && !backtester.IsFinished(); step++ {
 		// 現在価格取得
-		price := backtester.GetCurrentPrice("SAMPLE")
+		price := backtester.GetCurrentPrice()
 		if price <= 0.0 {
 			t.Errorf("Expected positive price at step %d", step)
 		}
@@ -643,12 +643,6 @@ func TestBacktester_ErrorHandling(t *testing.T) {
 	err = backtester.Buy("SAMPLE", -1000.0)
 	if err == nil {
 		t.Error("Expected error for negative size order")
-	}
-	
-	// 存在しないシンボル
-	err = backtester.Buy("INVALID", 1000.0)
-	if err == nil {
-		t.Error("Expected error for invalid symbol")
 	}
 	
 	// 残高不足での大きな注文

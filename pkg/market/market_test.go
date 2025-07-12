@@ -166,7 +166,7 @@ func TestMarket_Forward(t *testing.T) {
 		assert.True(t, success)
 		assert.Equal(t, 1, market.currentIndex)
 		assert.Equal(t, initialTime.Add(1*time.Minute), market.GetCurrentTime())
-		assert.Equal(t, 101.0, market.GetCurrentPrice(""))
+		assert.Equal(t, 101.0, market.GetCurrentPrice())
 	})
 
 	t.Run("FWD-002: Forward to trigger refill", func(t *testing.T) {

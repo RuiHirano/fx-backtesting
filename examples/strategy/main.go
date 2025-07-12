@@ -92,7 +92,7 @@ func main() {
 
 	for !bt.IsFinished() {
 		// 現在価格取得
-		currentPrice := bt.GetCurrentPrice("USDJPY")
+		currentPrice := bt.GetCurrentPrice()
 		if currentPrice <= 0 {
 			bt.Forward()
 			continue

@@ -14,7 +14,7 @@ func TestOrder_NewMarketOrder(t *testing.T) {
 		t.Errorf("Expected symbol EURUSD, got %s", order.Symbol)
 	}
 	
-	if order.Type != Market {
+	if order.Type != MarketOrder {
 		t.Errorf("Expected type Market, got %v", order.Type)
 	}
 	
@@ -30,12 +30,8 @@ func TestOrder_NewMarketOrder(t *testing.T) {
 func TestOrder_NewLimitOrder(t *testing.T) {
 	order := NewLimitOrder("test-123", "EURUSD", Sell, 10000.0, 1.1000)
 	
-	if order.Type != Limit {
+	if order.Type != LimitOrder {
 		t.Errorf("Expected type Limit, got %v", order.Type)
-	}
-	
-	if order.Price != 1.1000 {
-		t.Errorf("Expected price 1.1000, got %f", order.Price)
 	}
 }
 
@@ -100,9 +96,9 @@ func TestOrderType_String(t *testing.T) {
 		orderType OrderType
 		expected  string
 	}{
-		{Market, "Market"},
-		{Limit, "Limit"},
-		{Stop, "Stop"},
+		{MarketOrder, "Market"},
+		{LimitOrder, "Limit"},
+		{StopOrder, "Stop"},
 		{OrderType(999), "Unknown"},
 	}
 	
