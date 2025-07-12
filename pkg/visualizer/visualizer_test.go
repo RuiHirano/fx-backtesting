@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
+	"github.com/gorilla/websocket"
 )
 
 // TestNewVisualizer は Visualizer インスタンスの作成をテスト
@@ -297,7 +297,6 @@ func TestOnTradeEvent(t *testing.T) {
 		// トレードデータを作成  
 		trade := &models.Trade{
 			ID:         "trade_1",
-			Symbol:     "USDJPY",
 			Side:       models.Buy,
 			Size:       1000,
 			EntryPrice: 150.0,

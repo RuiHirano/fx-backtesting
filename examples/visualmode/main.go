@@ -213,7 +213,7 @@ func main() {
 		stepCount++
 		
 		// 現在価格を取得
-		currentPrice := bt.GetCurrentPrice(symbol)
+		currentPrice := bt.GetCurrentPrice()
 		if currentPrice > 0 {
 			// 戦略実行
 			if err := strategy.onTick(currentPrice, symbol); err != nil {

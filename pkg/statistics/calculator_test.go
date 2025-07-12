@@ -237,7 +237,6 @@ func TestCalculator_ErrorHandling(t *testing.T) {
 func createTrade(id string, pnl float64, timestamp time.Time) *models.Trade {
 	return &models.Trade{
 		ID:        id,
-		Symbol:    "EURUSD",
 		Side:      models.Buy,
 		Size:      10000.0,
 		EntryPrice: 1.1000,
