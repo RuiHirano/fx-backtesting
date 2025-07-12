@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
+	"github.com/RuiHirano/fx-backtesting/pkg/visualizer"
+	"github.com/stretchr/testify/assert"
 )
 
 // MockVisualizer はテスト用のモックVisualizer
@@ -53,6 +55,47 @@ func (m *MockVisualizer) OnStatisticsUpdate(stats *models.Statistics) error {
 
 func (m *MockVisualizer) OnBacktestStateChange(state BacktestState) error {
 	m.stateChanges = append(m.stateChanges, VisualizerBacktestState(state))
+	return nil
+}
+
+// Visualizerインターフェースの残りのメソッドを実装
+func (m *MockVisualizer) Start(ctx context.Context, port int) error {
+	return nil
+}
+
+func (m *MockVisualizer) Stop() error {
+	return nil
+}
+
+func (m *MockVisualizer) IsRunning() bool {
+	return false
+}
+
+func (m *MockVisualizer) OnControlCommand(cmd *visualizer.ControlCommand) error {
+	return nil
+}
+
+func (m *MockVisualizer) GetConnectionCount() int {
+	return 0
+}
+
+func (m *MockVisualizer) BroadcastMessage(message interface{}) error {
+	return nil
+}
+
+func (m *MockVisualizer) SetConfig(config *visualizer.Config) error {
+	return nil
+}
+
+func (m *MockVisualizer) GetConfig() *visualizer.Config {
+	return nil
+}
+
+func (m *MockVisualizer) SetBacktestController(controller models.BacktestController) {
+	// Do nothing in mock
+}
+
+func (m *MockVisualizer) GetBacktestController() models.BacktestController {
 	return nil
 }
 
@@ -115,7 +158,17 @@ func TestBacktesterWithVisualizer(t *testing.T) {
 		}
 		
 		// Backtester作成
-		backtester := NewBacktester(dataConfig, brokerConfig)
+		config := Config{
+			Market: MarketConfig{
+				DataProvider: dataConfig,
+			},
+			Broker: BrokerConfig{
+				InitialBalance: brokerConfig.InitialBalance,
+				Spread:         brokerConfig.Spread,
+			},
+		}
+		backtester, err := NewBacktester(config)
+		assert.NoError(t, err)
 		
 		// MockVisualizer作成
 		mockVisualizer := NewMockVisualizer()
@@ -125,7 +178,7 @@ func TestBacktesterWithVisualizer(t *testing.T) {
 		
 		// 初期化
 		ctx := context.Background()
-		err := backtester.Initialize(ctx)
+		err = backtester.Initialize(ctx)
 		if err != nil {
 			t.Errorf("Expected no error from Initialize, got %v", err)
 		}
@@ -165,13 +218,23 @@ func TestBacktesterWithVisualizer(t *testing.T) {
 		}
 		
 		// Backtester作成と初期化
-		backtester := NewBacktester(dataConfig, brokerConfig)
+		config := Config{
+			Market: MarketConfig{
+				DataProvider: dataConfig,
+			},
+			Broker: BrokerConfig{
+				InitialBalance: brokerConfig.InitialBalance,
+				Spread:         brokerConfig.Spread,
+			},
+		}
+		backtester, err := NewBacktester(config)
+		assert.NoError(t, err)
 		mockVisualizer := NewMockVisualizer()
 		
 		backtester.visualizer = mockVisualizer
 		
 		ctx := context.Background()
-		err := backtester.Initialize(ctx)
+		err = backtester.Initialize(ctx)
 		if err != nil {
 			t.Errorf("Expected no error from Initialize, got %v", err)
 		}
@@ -217,10 +280,22 @@ func TestBacktesterWithVisualizer(t *testing.T) {
 			Spread:         0.0001,
 		}
 		
-		backtester := NewBacktester(dataConfig, brokerConfig)
+		config := Config{
+			Market: MarketConfig{
+				DataProvider: dataConfig,
+			},
+			Broker: BrokerConfig{
+				InitialBalance: brokerConfig.InitialBalance,
+				Spread:         brokerConfig.Spread,
+			},
+		}
+		backtester, err := NewBacktester(config)
+		if err != nil {
+			t.Errorf("Expected no error from NewBacktester, got %v", err)
+		}
 		
 		ctx := context.Background()
-		err := backtester.Initialize(ctx)
+		err = backtester.Initialize(ctx)
 		if err != nil {
 			t.Errorf("Expected no error from Initialize without visualizer, got %v", err)
 		}
@@ -251,7 +326,19 @@ func TestBacktester_NewBacktester(t *testing.T) {
 	}
 	
 	// Backtester作成
-	backtester := NewBacktester(dataConfig, brokerConfig)
+	config := Config{
+		Market: MarketConfig{
+			DataProvider: dataConfig,
+		},
+		Broker: BrokerConfig{
+			InitialBalance: brokerConfig.InitialBalance,
+			Spread:         brokerConfig.Spread,
+		},
+	}
+	backtester, err := NewBacktester(config)
+	if err != nil {
+		t.Fatalf("Expected no error from NewBacktester, got %v", err)
+	}
 	
 	if backtester == nil {
 		t.Fatal("Expected backtester to be created")
@@ -261,7 +348,7 @@ func TestBacktester_NewBacktester(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	
-	err := backtester.Initialize(ctx)
+	err = backtester.Initialize(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error from Initialize, got %v", err)
 	}
@@ -597,5 +684,18 @@ func createTestBacktester(_ *testing.T) *Backtester {
 		Spread:         0.0001,
 	}
 	
-	return NewBacktester(dataConfig, brokerConfig)
+	config := Config{
+		Market: MarketConfig{
+			DataProvider: dataConfig,
+		},
+		Broker: BrokerConfig{
+			InitialBalance: brokerConfig.InitialBalance,
+			Spread:         brokerConfig.Spread,
+		},
+	}
+	backtester, err := NewBacktester(config)
+	if err != nil {
+		panic(err) // テスト用なのでpanicで良い
+	}
+	return backtester
 }

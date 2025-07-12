@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/RuiHirano/fx-backtesting/pkg/broker"
-	"github.com/RuiHirano/fx-backtesting/pkg/data"
 	"github.com/RuiHirano/fx-backtesting/pkg/market"
 	"github.com/RuiHirano/fx-backtesting/pkg/models"
 	"github.com/RuiHirano/fx-backtesting/pkg/visualizer"
@@ -54,10 +53,10 @@ type Config struct {
 
 // Backtester はバックテスト実行とユーザーAPIを提供する統括コンポーネントです。
 type Backtester struct {
+	config           Config
 	market           market.Market
 	broker           broker.Broker
-	visualizer   visualizer.Visualizer
-	visualizerConfig models.VisualizerConfig
+	visualizer       visualizer.Visualizer
 	initialized      bool
 	statistics       *models.Statistics
 	// バックテスト制御関連
@@ -85,18 +84,11 @@ func NewBacktester(config Config) (*Backtester, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	// DataProvider作成（期間設定を適用）
-	dataProviderConfig := config.Market.DataProvider
-	if config.Backtest.StartTime != nil {
-		dataProviderConfig.StartTime = config.Backtest.StartTime
-	}
-	if config.Backtest.EndTime != nil {
-		dataProviderConfig.EndTime = config.Backtest.EndTime
-	}
-	provider := data.NewCSVProvider(dataProviderConfig)
-	
 	// Market作成
-	mkt := market.NewMarket(provider)
+	mkt := market.NewMarket(models.MarketConfig{
+		DataProvider: config.Market.DataProvider,
+		Symbol:       "EURUSD", // デフォルト値
+	})
 	
 	// Broker作成 (models.BrokerConfigに変換)
 	brokerConfig := models.BrokerConfig{
@@ -109,10 +101,10 @@ func NewBacktester(config Config) (*Backtester, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	bt := &Backtester{
+		config:           config,
 		market:           mkt,
 		broker:           bkr,
 		visualizer:       nil,
-		visualizerConfig: config.Visualizer,
 		initialized:      false,
 		statistics:       models.NewStatistics(config.Broker.InitialBalance),
 		ctx:              ctx,
@@ -219,12 +211,12 @@ func NewBacktestController(bt *Backtester) *BacktestController {
 // Initialize はBacktesterを初期化します。
 func (bt *Backtester) Initialize(ctx context.Context) error {
 	// VisualizerConfig検証
-	if err := bt.visualizerConfig.Validate(); err != nil {
+	if err := bt.config.Visualizer.Validate(); err != nil {
 		return fmt.Errorf("invalid visualizer config: %w", err)
 	}
 	
 	// Visualizer初期化（有効な場合のみ）
-	if bt.visualizerConfig.Enabled {
+	if bt.config.Visualizer.Enabled {
 		if err := bt.initializeVisualizer(ctx); err != nil {
 			return fmt.Errorf("failed to initialize visualizer: %w", err)
 		}
@@ -251,14 +243,14 @@ func (bt *Backtester) Initialize(ctx context.Context) error {
 func (bt *Backtester) initializeVisualizer(ctx context.Context) error {
 	// visualizer.Configに変換
 	vizConfig := &visualizer.Config{
-		Port:              bt.visualizerConfig.Port,
-		ReadTimeout:       bt.visualizerConfig.ReadTimeout,
-		WriteTimeout:      bt.visualizerConfig.WriteTimeout,
-		MaxClients:        bt.visualizerConfig.MaxClients,
-		HeartbeatInterval: bt.visualizerConfig.HeartbeatInterval,
-		ClientTimeout:     bt.visualizerConfig.ClientTimeout,
-		BufferSize:        bt.visualizerConfig.BufferSize,
-		LogLevel:          bt.visualizerConfig.LogLevel,
+		Port:              bt.config.Visualizer.Port,
+		ReadTimeout:       bt.config.Visualizer.ReadTimeout,
+		WriteTimeout:      bt.config.Visualizer.WriteTimeout,
+		MaxClients:        bt.config.Visualizer.MaxClients,
+		HeartbeatInterval: bt.config.Visualizer.HeartbeatInterval,
+		ClientTimeout:     bt.config.Visualizer.ClientTimeout,
+		BufferSize:        bt.config.Visualizer.BufferSize,
+		LogLevel:          bt.config.Visualizer.LogLevel,
 	}
 	
 	// Visualizer作成
@@ -270,7 +262,7 @@ func (bt *Backtester) initializeVisualizer(ctx context.Context) error {
 	}
 	
 	// Visualizer開始
-	if err := bt.visualizer.Start(ctx, bt.visualizerConfig.Port); err != nil {
+	if err := bt.visualizer.Start(ctx, bt.config.Visualizer.Port); err != nil {
 		return fmt.Errorf("failed to start visualizer: %w", err)
 	}
 	

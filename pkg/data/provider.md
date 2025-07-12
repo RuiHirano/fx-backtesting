@@ -4,6 +4,13 @@
 
 Data Providerは、バックテストシステムにおいて外部データソースから市場データを読み込み、ローソク足データとして提供する責任を持つコンポーネントです。期間指定データ取得、前後データ取得、TimeとIndexの相互変換機能を提供します。
 
+**責務の明確化：**
+- DataProvider：純粋なデータ提供（ファイル読み込み、インデックス構築、検索）
+- Backtester：時間範囲フィルタリング（StartTime/EndTimeの管理）
+- Market：キャッシュ管理と時系列進行制御
+
+**注意：** 現在の実装では、DataProviderConfig内のStartTime/EndTimeが依然として使用されています。将来的にはこれらの時間フィルタリング機能をBacktester層に移動し、DataProviderを純粋なデータアクセス層として設計することが推奨されます。
+
 ## アーキテクチャ
 
 ### インターフェース設計
@@ -69,8 +76,6 @@ type CSVProvider struct {
 **設定項目：**
 - `FilePath`: CSVファイルのパス
 - `Format`: データフォーマット（現在は"csv"のみサポート）
-- `StartTime`: データの開始時刻（オプション）
-- `EndTime`: データの終了時刻（オプション）
 
 ## データフロー
 
@@ -214,8 +219,6 @@ models.DataProviderConfigに新しいフィールドを追加することで、�
 config := models.DataProviderConfig{
     FilePath: "data/EURUSD_M1.csv",
     Format: "csv",
-    StartTime: &startTime,
-    EndTime: &endTime,
 }
 
 provider := NewCSVProvider(config)

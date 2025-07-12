@@ -92,11 +92,7 @@ func (p *CSVProvider) buildIndex() error {
 			continue
 		}
 
-		// 期間フィルタリング
-		if !p.isWithinTimeRange(candle.Timestamp) {
-			lineNumber++
-			continue
-		}
+		// バリデーション済みのデータを追加
 
 		// インデックスに追加（ファイルオフセットは簡単化）
 		p.index = append(p.index, CandleIndex{
@@ -115,21 +111,6 @@ func (p *CSVProvider) buildIndex() error {
 
 	p.indexed = true
 	return nil
-}
-
-// isWithinTimeRange は指定された時刻が期間内かどうかを判定します
-func (p *CSVProvider) isWithinTimeRange(candleTime time.Time) bool {
-	// 開始時刻のチェック
-	if p.Config.StartTime != nil && candleTime.Before(*p.Config.StartTime) {
-		return false
-	}
-	
-	// 終了時刻のチェック
-	if p.Config.EndTime != nil && candleTime.After(*p.Config.EndTime) {
-		return false
-	}
-	
-	return true
 }
 
 // TimeToIndex は時刻をインデックスに変換します。
